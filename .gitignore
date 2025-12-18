@@ -33,5 +33,6 @@ tarpaulin-report.html
 
 # extendr/R files
 *.o
+*.so
 *.tar.gz
 *.Rcheck

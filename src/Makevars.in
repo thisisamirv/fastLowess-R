@@ -2,14 +2,17 @@ TARGET_DIR = ../target
 LIBDIR = $(TARGET_DIR)/release
 STATLIB = $(LIBDIR)/libfastLowess.a
 
-# Linux linking (default)
-PKG_LIBS = -L$(LIBDIR) -Wl,--whole-archive -lfastLowess -Wl,--no-whole-archive -Wl,--gc-sections
+# Linking flags (substituted by configure)
+PKG_LIBS = -L$(LIBDIR) @UNDEFINED_FLAGS@ -lfastLowess @GC_SECTIONS@
 
 all: clean $(SHLIB)
 
 $(SHLIB): $(STATLIB)
 
 $(STATLIB):
+	@echo "Reporting Rust compiler versions:"
+	@cargo --version
+	@rustc --version
 	cargo build --release --manifest-path=../Cargo.toml --target-dir $(TARGET_DIR)
 
 clean:

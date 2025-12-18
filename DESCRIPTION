@@ -1,5 +1,5 @@
 Package: fastLowess
-Title: Rust-based LOWESS Smoothing
+Title: Rust-Based LOWESS Smoothing
 Version: 0.1.0
 Authors@R: person("Amir", "Valizadeh", email = "thisisamirv@gmail.com", role = c("aut", "cre"))
 Description: Provides high-performance LOWESS smoothing (Locally Weighted Scatterplot Smoothing) 

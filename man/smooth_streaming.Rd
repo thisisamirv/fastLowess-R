@@ -26,8 +26,8 @@ for streaming to ensure good local fits within chunks.}
 
 \item{chunk_size}{Number of points to process in each chunk (default: 5000).}
 
-\item{overlap}{Number of points to overlap between chunks (default: 10% of
-chunk_size). Overlap ensures smooth transitions between chunks.}
+\item{overlap}{Number of points to overlap between chunks (default: 10
+percent of chunk_size). Overlap ensures smooth transitions between chunks.}
 
 \item{iterations}{Number of robustness iterations (default: 3).}
 
@@ -42,12 +42,8 @@ chunk_size). Overlap ensures smooth transitions between chunks.}
 (default: TRUE).}
 }
 \value{
-A list with the following components:
-  \itemize{
-    \item \code{x}: Sorted x values
-    \item \code{y}: Smoothed y values
-    \item \code{fraction_used}: Fraction used for smoothing
-  }
+A list containing: x (sorted x values), y (smoothed y values),
+  fraction_used.
 }
 \description{
 Perform LOWESS smoothing using a streaming/chunked approach for large

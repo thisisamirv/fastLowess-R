@@ -36,3 +36,4 @@ tarpaulin-report.html
 *.so
 *.tar.gz
 *.Rcheck
+fastLowess-manual.pdf

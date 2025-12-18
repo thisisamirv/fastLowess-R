@@ -28,3 +28,23 @@ Scatterplot Smoothing) using a Rust backend for speed and efficiency.
 }
 }
 
+\section{Examples}{
+
+\preformatted{
+# Run available demos:
+demo(package = "fastLowess")
+
+# 1. Batch Smoothing Demo
+# Demonstrates basic batch processing on a static dataset.
+demo("batch_smoothing", package = "fastLowess", ask = FALSE)
+
+# 2. Online Smoothing Demo
+# Shows sliding window smoothing simulating real-time data updates.
+demo("online_smoothing", package = "fastLowess", ask = FALSE)
+
+# 3. Streaming Smoothing Demo
+# Illustrates chunked processing for datasets larger than memory.
+demo("streaming_smoothing", package = "fastLowess", ask = FALSE)
+}
+}
+

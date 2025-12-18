@@ -43,12 +43,8 @@ window (default: 100).}
 (default: FALSE, as online mode typically processes sequentially).}
 }
 \value{
-A list with the following components:
-  \itemize{
-    \item \code{x}: Input x values (in original order)
-    \item \code{y}: Smoothed y values
-    \item \code{fraction_used}: Fraction used for smoothing
-  }
+A list containing: x (input x values), y (smoothed y values),
+  fraction_used.
 }
 \description{
 Perform LOWESS smoothing using an online/sliding window approach for

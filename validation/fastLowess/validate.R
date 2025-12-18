@@ -1,22 +1,17 @@
-#!/usr/bin/env python3
-"""
-Python fastLowess validation runner with JSON output for comparison with statsmodels.
+#!/usr/bin/Rscript
 
-This validation program outputs results in JSON format compatible with the
-Rust fastLowess validation results.
-"""
+# R fastLowess validation runner with JSON output for comparison with statsmodels.
+# This validation program outputs results in JSON format compatible with the
+# Python fastLowess validation results.
 
-import json
-import os
-from pathlib import Path
+suppressPackageStartupMessages({
+    library(jsonlite)
+    library(fastLowess)
+})
 
-import numpy as np
-import fastLowess
-
-
-def main():
-    # Same data as statsmodels validation
-    x = np.array([
+main <- function() {
+    # Same data as statsmodels and Python validation
+    x <- c(
         0.0,
         0.06346651825433926,
         0.12693303650867852,
@@ -116,10 +111,10 @@ def main():
         6.092785752416569,
         6.156252270670908,
         6.219718788925247,
-        6.283185307179586,
-    ])
+        6.283185307179586
+    )
     
-    y = np.array([
+    y <- c(
         0.24835707650561634,
         -0.005708230929027822,
         0.4504367226240955,
@@ -219,111 +214,117 @@ def main():
         -0.041191105828121716,
         0.003935182516195623,
         -0.060867191335334074,
-        -0.11729356668757371,
-    ])
+        -0.11729356668757371
+    )
 
-    results = {}
+    results <- list()
 
     # Scenario 1: basic (default parameters)
-    result = fastLowess.smooth(x, y)
-    results["basic"] = format_result(result)
+    result <- fastLowess::smooth(x, y, parallel=TRUE)
+    results[["basic"]] <- format_result(result)
 
     # Scenario 2: small_fraction
-    result = fastLowess.smooth(x, y, fraction=0.2)
-    results["small_fraction"] = format_result(result)
+    result <- fastLowess::smooth(x, y, fraction=0.2, parallel=TRUE)
+    results[["small_fraction"]] <- format_result(result)
 
     # Scenario 3: no_robust (iterations=0)
-    result = fastLowess.smooth(x, y, iterations=0)
-    results["no_robust"] = format_result(result)
+    result <- fastLowess::smooth(x, y, iterations=0L, parallel=TRUE)
+    results[["no_robust"]] <- format_result(result)
 
     # Scenario 4: more_robust (iterations=5)
-    result = fastLowess.smooth(x, y, iterations=5)
-    results["more_robust"] = format_result(result)
+    result <- fastLowess::smooth(x, y, iterations=5L, parallel=TRUE)
+    results[["more_robust"]] <- format_result(result)
 
     # Scenario 5: auto_converge
-    result = fastLowess.smooth(x, y, auto_converge=1e-4)
-    results["auto_converge"] = format_result(result)
+    result <- fastLowess::smooth(x, y, auto_converge=1e-4, parallel=TRUE)
+    results[["auto_converge"]] <- format_result(result)
 
     # Scenario 6: cross_validate (k-fold)
-    result = fastLowess.smooth(
+    result <- fastLowess::smooth(
         x, y,
-        cv_fractions=[0.2, 0.4, 0.6],
+        cv_fractions=c(0.2, 0.4, 0.6),
         cv_method="kfold",
-        cv_k=5,
+        cv_k=5L,
+        parallel=TRUE
     )
-    results["cross_validate"] = format_result(result)
+    results[["cross_validate"]] <- format_result(result)
 
     # Scenario 7: kfold_cv (same as cross_validate)
-    result = fastLowess.smooth(
+    result <- fastLowess::smooth(
         x, y,
-        cv_fractions=[0.2, 0.4, 0.6],
+        cv_fractions=c(0.2, 0.4, 0.6),
         cv_method="kfold",
-        cv_k=5,
+        cv_k=5L,
+        parallel=TRUE
     )
-    results["kfold_cv"] = format_result(result)
+    results[["kfold_cv"]] <- format_result(result)
 
     # Scenario 8: loocv
-    result = fastLowess.smooth(
+    result <- fastLowess::smooth(
         x, y,
-        cv_fractions=[0.2, 0.4, 0.6],
+        cv_fractions=c(0.2, 0.4, 0.6),
         cv_method="loocv",
+        parallel=TRUE
     )
-    results["loocv"] = format_result(result)
+    results[["loocv"]] <- format_result(result)
 
     # Scenario 9: delta_zero
-    result = fastLowess.smooth(x, y, delta=0.0)
-    results["delta_zero"] = format_result(result)
+    result <- fastLowess::smooth(x, y, delta=0.0, parallel=TRUE)
+    results[["delta_zero"]] <- format_result(result)
 
     # Scenario 10: with_all_diagnostics
-    result = fastLowess.smooth(
+    result <- fastLowess::smooth(
         x, y,
-        return_diagnostics=True,
-        return_residuals=True,
-        return_robustness_weights=True,
+        return_diagnostics=TRUE,
+        return_residuals=TRUE,
+        return_robustness_weights=TRUE,
+        parallel=TRUE
     )
-    results["with_all_diagnostics"] = format_result(result)
+    results[["with_all_diagnostics"]] <- format_result(result)
 
     # Output to JSON
-    json_str = json.dumps(results, indent=2)
+    json_str <- toJSON(results, auto_unbox=TRUE, pretty=TRUE, digits=NA)
 
     # Determine output directory (parent's output dir: ../output)
-    script_dir = Path(__file__).parent
-    out_dir = script_dir.parent / "output"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    out_path = out_dir / "fastLowess_validate.json"
-    with open(out_path, "w") as f:
-        f.write(json_str)
-
-    print(f"Saved results to {out_path}")
-
-
-def format_result(result):
-    """Format a LowessResult into a dictionary for JSON serialization."""
-    scenario_data = {
-        "x": result.x.tolist(),
-        "y": result.y.tolist(),
-        "residuals": result.residuals.tolist() if result.residuals is not None else None,
-        "robustness_weights": result.robustness_weights.tolist() if result.robustness_weights is not None else None,
-        "diagnostics": None,
-        "iterations_used": result.iterations_used,
-        "fraction_used": result.fraction_used,
-        "cv_scores": result.cv_scores.tolist() if result.cv_scores is not None else None,
+    out_dir <- "output"
+    if (!dir.exists(out_dir)) {
+        dir.create(out_dir, recursive=TRUE)
     }
 
-    if result.diagnostics is not None:
-        scenario_data["diagnostics"] = {
-            "rmse": result.diagnostics.rmse,
-            "mae": result.diagnostics.mae,
-            "r_squared": result.diagnostics.r_squared,
-            "aic": result.diagnostics.aic,
-            "aicc": result.diagnostics.aicc,
-            "effective_df": result.diagnostics.effective_df,
-            "residual_sd": result.diagnostics.residual_sd,
-        }
+    out_path <- file.path(out_dir, "fastLowess_validate.json")
+    write(json_str, file=out_path)
 
-    return scenario_data
+    cat(sprintf("Saved results to %s\n", out_path))
+}
 
+format_result <- function(result) {
+    # Format a LowessResult into a list for JSON serialization
+    scenario_data <- list(
+        x = result$x,
+        y = result$y,
+        residuals = result$residuals,
+        robustness_weights = result$robustness_weights,
+        diagnostics = NULL,
+        iterations_used = result$iterations_used,
+        fraction_used = result$fraction_used,
+        cv_scores = result$cv_scores
+    )
 
-if __name__ == "__main__":
+    if (!is.null(result$diagnostics)) {
+        scenario_data$diagnostics <- list(
+            rmse = result$diagnostics$rmse,
+            mae = result$diagnostics$mae,
+            r_squared = result$diagnostics$r_squared,
+            aic = result$diagnostics$aic,
+            aicc = result$diagnostics$aicc,
+            effective_df = result$diagnostics$effective_df,
+            residual_sd = result$diagnostics$residual_sd
+        )
+    }
+
+    return(scenario_data)
+}
+
+if (sys.nframe() == 0) {
     main()
+}

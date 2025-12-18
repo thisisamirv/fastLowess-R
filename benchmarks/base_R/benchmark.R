@@ -7,7 +7,9 @@
 suppressPackageStartupMessages({
     library(jsonlite)
     library(stats)
+    library(microbenchmark)
 })
+
 
 # ============================================================================
 # Constants
@@ -91,23 +93,14 @@ benchmark_basic_smoothing <- function(sizes, iterations) {
         x <- data$x
         y <- data$y
         
-        times <- numeric(iterations)
+        # Use microbenchmark for accurate high-resolution timing
+        mb <- microbenchmark(
+            stats::lowess(x, y, f=0.3, iter=3),
+            times = iterations,
+            unit = "s"
+        )
         
-        # stats::lowess signature: lowess(x, y, f=2/3, iter=3, delta=0.01*...)
-        # Python benchmark uses: fraction=0.3, iterations=3
-        
-        # Warmup
-        for (i in 1:WARMUP_ITERATIONS) {
-            invisible(stats::lowess(x, y, f=0.3, iter=3))
-        }
-        
-        # Benchmark
-        for (i in 1:iterations) {
-            start_time <- Sys.time()
-            invisible(stats::lowess(x, y, f=0.3, iter=3))
-            end_time <- Sys.time()
-            times[i] <- as.numeric(end_time - start_time)
-        }
+        times <- mb$time / 1e9  # Convert nanoseconds to seconds
         
         result <- compute_stats(result, times)
         cat(sprintf("  Mean: %.2f ms ± %.2f ms\n", result$mean_time_ms, result$std_time_ms))
@@ -128,20 +121,12 @@ benchmark_fraction_variations <- function(size, iterations) {
         cat(sprintf("Benchmarking fraction=%.2f...\n", frac))
         result <- create_benchmark_result(paste0("fraction_", frac), size, iterations)
         
-        times <- numeric(iterations)
-        
-        # Warmup
-        for (i in 1:WARMUP_ITERATIONS) {
-            invisible(stats::lowess(x, y, f=frac, iter=3))
-        }
-        
-        # Benchmark
-        for (i in 1:iterations) {
-            start_time <- Sys.time()
-            invisible(stats::lowess(x, y, f=frac, iter=3))
-            end_time <- Sys.time()
-            times[i] <- as.numeric(end_time - start_time)
-        }
+        mb <- microbenchmark(
+            stats::lowess(x, y, f=frac, iter=3),
+            times = iterations,
+            unit = "s"
+        )
+        times <- mb$time / 1e9
         
         result <- compute_stats(result, times)
         cat(sprintf("  Mean: %.2f ms ± %.2f ms\n", result$mean_time_ms, result$std_time_ms))
@@ -162,20 +147,12 @@ benchmark_robustness_iterations <- function(size, iterations) {
         cat(sprintf("Benchmarking robustness iterations=%d...\n", niter))
         result <- create_benchmark_result(paste0("iterations_", niter), size, iterations)
         
-        times <- numeric(iterations)
-        
-        # Warmup
-        for (i in 1:WARMUP_ITERATIONS) {
-            invisible(stats::lowess(x, y, f=0.3, iter=niter))
-        }
-        
-        # Benchmark
-        for (i in 1:iterations) {
-            start_time <- Sys.time()
-            invisible(stats::lowess(x, y, f=0.3, iter=niter))
-            end_time <- Sys.time()
-            times[i] <- as.numeric(end_time - start_time)
-        }
+        mb <- microbenchmark(
+            stats::lowess(x, y, f=0.3, iter=niter),
+            times = iterations,
+            unit = "s"
+        )
+        times <- mb$time / 1e9
         
         result <- compute_stats(result, times)
         cat(sprintf("  Mean: %.2f ms ± %.2f ms\n", result$mean_time_ms, result$std_time_ms))
@@ -205,28 +182,20 @@ benchmark_delta_parameter <- function(size, iterations) {
         cat(sprintf("Benchmarking %s (delta=%s)...\n", name, ifelse(is.null(delta_val), "NULL (default)", as.character(delta_val))))
         result <- create_benchmark_result(name, size, iterations)
         
-        times <- numeric(iterations)
-        
-        # Warmup
-        for (i in 1:WARMUP_ITERATIONS) {
-            if (is.null(delta_val)) {
-                invisible(stats::lowess(x, y, f=0.3, iter=2)) # Use default delta
-            } else {
-                invisible(stats::lowess(x, y, f=0.3, iter=2, delta=delta_val))
-            }
+        mb <- if (is.null(delta_val)) {
+            microbenchmark(
+                stats::lowess(x, y, f=0.3, iter=2),
+                times = iterations,
+                unit = "s"
+            )
+        } else {
+            microbenchmark(
+                stats::lowess(x, y, f=0.3, iter=2, delta=delta_val),
+                times = iterations,
+                unit = "s"
+            )
         }
-        
-        # Benchmark
-        for (i in 1:iterations) {
-            start_time <- Sys.time()
-            if (is.null(delta_val)) {
-                invisible(stats::lowess(x, y, f=0.3, iter=2))
-            } else {
-                invisible(stats::lowess(x, y, f=0.3, iter=2, delta=delta_val))
-            }
-            end_time <- Sys.time()
-            times[i] <- as.numeric(end_time - start_time)
-        }
+        times <- mb$time / 1e9
         
         result <- compute_stats(result, times)
         cat(sprintf("  Mean: %.2f ms ± %.2f ms\n", result$mean_time_ms, result$std_time_ms))
@@ -245,16 +214,12 @@ benchmark_pathological_cases <- function(size, iterations) {
     y_clustered <- sin(x_clustered)
     
     result <- create_benchmark_result("clustered_x", size, iterations)
-    times <- numeric(iterations)
-    
-    for (i in 1:WARMUP_ITERATIONS) {
-        invisible(stats::lowess(x_clustered, y_clustered, f=0.5, iter=2))
-    }
-    for (i in 1:iterations) {
-        start <- Sys.time()
-        invisible(stats::lowess(x_clustered, y_clustered, f=0.5, iter=2))
-        times[i] <- as.numeric(Sys.time() - start)
-    }
+    mb <- microbenchmark(
+        stats::lowess(x_clustered, y_clustered, f=0.5, iter=2),
+        times = iterations,
+        unit = "s"
+    )
+    times <- mb$time / 1e9
     result <- compute_stats(result, times)
     cat(sprintf("  Mean: %.2f ms ± %.2f ms\n", result$mean_time_ms, result$std_time_ms))
     results[[length(results) + 1]] <- result
@@ -275,16 +240,12 @@ benchmark_pathological_cases <- function(size, iterations) {
     }
     
     result <- create_benchmark_result("extreme_outliers", size, iterations)
-    times <- numeric(iterations)
-    
-    for (i in 1:WARMUP_ITERATIONS) {
-        invisible(stats::lowess(x_normal, y_outliers, f=0.3, iter=5))
-    }
-    for (i in 1:iterations) {
-        start <- Sys.time()
-        invisible(stats::lowess(x_normal, y_outliers, f=0.3, iter=5))
-        times[i] <- as.numeric(Sys.time() - start)
-    }
+    mb <- microbenchmark(
+        stats::lowess(x_normal, y_outliers, f=0.3, iter=5),
+        times = iterations,
+        unit = "s"
+    )
+    times <- mb$time / 1e9
     result <- compute_stats(result, times)
     cat(sprintf("  Mean: %.2f ms ± %.2f ms\n", result$mean_time_ms, result$std_time_ms))
     results[[length(results) + 1]] <- result
@@ -294,16 +255,12 @@ benchmark_pathological_cases <- function(size, iterations) {
     y_constant <- rep(5.0, size)
     
     result <- create_benchmark_result("constant_y", size, iterations)
-    times <- numeric(iterations)
-    
-    for (i in 1:WARMUP_ITERATIONS) {
-        invisible(stats::lowess(x_normal, y_constant, f=0.3, iter=2))
-    }
-    for (i in 1:iterations) {
-        start <- Sys.time()
-        invisible(stats::lowess(x_normal, y_constant, f=0.3, iter=2))
-        times[i] <- as.numeric(Sys.time() - start)
-    }
+    mb <- microbenchmark(
+        stats::lowess(x_normal, y_constant, f=0.3, iter=2),
+        times = iterations,
+        unit = "s"
+    )
+    times <- mb$time / 1e9
     result <- compute_stats(result, times)
     cat(sprintf("  Mean: %.2f ms ± %.2f ms\n", result$mean_time_ms, result$std_time_ms))
     results[[length(results) + 1]] <- result
@@ -314,16 +271,12 @@ benchmark_pathological_cases <- function(size, iterations) {
     y_noisy <- sin(x_normal / 10.0) * 0.1 + sin(sin((i * 7.3) * 0.5)) * 2.0
     
     result <- create_benchmark_result("high_noise", size, iterations)
-    times <- numeric(iterations)
-    
-    for (i in 1:WARMUP_ITERATIONS) {
-        invisible(stats::lowess(x_normal, y_noisy, f=0.6, iter=3))
-    }
-    for (i in 1:iterations) {
-        start <- Sys.time()
-        invisible(stats::lowess(x_normal, y_noisy, f=0.6, iter=3))
-        times[i] <- as.numeric(Sys.time() - start)
-    }
+    mb <- microbenchmark(
+        stats::lowess(x_normal, y_noisy, f=0.6, iter=3),
+        times = iterations,
+        unit = "s"
+    )
+    times <- mb$time / 1e9
     result <- compute_stats(result, times)
     cat(sprintf("  Mean: %.2f ms ± %.2f ms\n", result$mean_time_ms, result$std_time_ms))
     results[[length(results) + 1]] <- result
@@ -341,16 +294,12 @@ benchmark_realistic_scenarios <- function(iterations) {
     y <- x * 0.01 + sin(x / 50.0) * 0.5 + sin(sin((i * 7.3) * 0.5)) * 0.3
     
     result <- create_benchmark_result("financial_timeseries", size, iterations)
-    times <- numeric(iterations)
-    
-    for (i in 1:WARMUP_ITERATIONS) {
-        invisible(stats::lowess(x, y, f=0.1, iter=2))
-    }
-    for (i in 1:iterations) {
-        start <- Sys.time()
-        invisible(stats::lowess(x, y, f=0.1, iter=2))
-        times[i] <- as.numeric(Sys.time() - start)
-    }
+    mb <- microbenchmark(
+        stats::lowess(x, y, f=0.1, iter=2),
+        times = iterations,
+        unit = "s"
+    )
+    times <- mb$time / 1e9
     result <- compute_stats(result, times)
     cat(sprintf("  Mean: %.2f ms ± %.2f ms\n", result$mean_time_ms, result$std_time_ms))
     results[[length(results) + 1]] <- result
@@ -362,16 +311,12 @@ benchmark_realistic_scenarios <- function(iterations) {
     y_sci <- exp(x_sci * 2.0 * pi) * cos(x_sci * 10.0) + sin(sin((i * 13.7) * 0.3)) * 0.1
     
     result <- create_benchmark_result("scientific_data", size, iterations)
-    times <- numeric(iterations)
-    
-    for (i in 1:WARMUP_ITERATIONS) {
-        invisible(stats::lowess(x_sci, y_sci, f=0.2, iter=3))
-    }
-    for (i in 1:iterations) {
-        start <- Sys.time()
-        invisible(stats::lowess(x_sci, y_sci, f=0.2, iter=3))
-        times[i] <- as.numeric(Sys.time() - start)
-    }
+    mb <- microbenchmark(
+        stats::lowess(x_sci, y_sci, f=0.2, iter=3),
+        times = iterations,
+        unit = "s"
+    )
+    times <- mb$time / 1e9
     result <- compute_stats(result, times)
     cat(sprintf("  Mean: %.2f ms ± %.2f ms\n", result$mean_time_ms, result$std_time_ms))
     results[[length(results) + 1]] <- result
@@ -384,16 +329,12 @@ benchmark_realistic_scenarios <- function(iterations) {
     y_genomic <- pmax(0.0, pmin(1.0, raw_y))
     
     result <- create_benchmark_result("genomic_methylation", size, iterations)
-    times <- numeric(iterations)
-    
-    for (i in 1:WARMUP_ITERATIONS) {
-        invisible(stats::lowess(x_genomic, y_genomic, f=0.2, iter=3, delta=100.0))
-    }
-    for (i in 1:iterations) {
-        start <- Sys.time()
-        invisible(stats::lowess(x_genomic, y_genomic, f=0.2, iter=3, delta=100.0))
-        times[i] <- as.numeric(Sys.time() - start)
-    }
+    mb <- microbenchmark(
+        stats::lowess(x_genomic, y_genomic, f=0.2, iter=3, delta=100.0),
+        times = iterations,
+        unit = "s"
+    )
+    times <- mb$time / 1e9
     result <- compute_stats(result, times)
     cat(sprintf("  Mean: %.2f ms ± %.2f ms\n", result$mean_time_ms, result$std_time_ms))
     results[[length(results) + 1]] <- result
@@ -438,7 +379,7 @@ main <- function() {
     
     # Save to base_R_benchmark.json, assuming user might compare this instead of statsmodels later
     # or rename the file.
-    out_dir <- "benchmarks/output"
+    out_dir <- "output"
     if (!dir.exists(out_dir)) {
         dir.create(out_dir, recursive = TRUE)
     }

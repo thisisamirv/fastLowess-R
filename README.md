@@ -78,4 +78,4 @@ python3 compare_validation.py
 
 ## Requirements
 
-- **R**: 4.3.1 with `remotes` installed.
+- **R**: 4.3.1 with `remotes`, `microbenchmark` and `jsonlite` installed.

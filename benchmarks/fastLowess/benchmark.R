@@ -6,6 +6,7 @@
 suppressPackageStartupMessages({
     library(jsonlite)
     library(fastLowess)
+    library(microbenchmark)
 })
 
 # ============================================================================
@@ -13,6 +14,17 @@ suppressPackageStartupMessages({
 # ============================================================================
 
 WARMUP_ITERATIONS <- 3
+# Parallel processing only helps for datasets >= 10K points
+# Below that, thread overhead dominates any speedup
+PARALLEL_THRESHOLD <- 10000
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+should_use_parallel <- function(size) {
+    size >= PARALLEL_THRESHOLD
+}
 
 # ============================================================================
 # Data Structures
@@ -95,23 +107,21 @@ benchmark_basic_smoothing <- function(sizes, iterations) {
         x <- data$x
         y <- data$y
         
-        times <- numeric(iterations)
+        # Use parallel=TRUE only for large datasets (>=10000) where benefit > overhead
+        use_parallel <- size >= 10000
         
-        # Warmup
-        for (i in 1:WARMUP_ITERATIONS) {
-            invisible(fastLowess::smooth(x, y, fraction=0.3, iterations=3, parallel=TRUE))
-        }
+        # Use microbenchmark for accurate high-resolution timing
+        mb <- microbenchmark(
+            fastLowess::smooth(x, y, fraction=0.3, iterations=3L, parallel=use_parallel),
+            times = iterations,
+            unit = "s"
+        )
         
-        # Benchmark
-        for (i in 1:iterations) {
-            start_time <- Sys.time()
-            invisible(fastLowess::smooth(x, y, fraction=0.3, iterations=3, parallel=TRUE))
-            end_time <- Sys.time()
-            times[i] <- as.numeric(end_time - start_time)
-        }
+        times <- mb$time / 1e9  # Convert nanoseconds to seconds
         
         result <- compute_stats(result, times)
-        cat(sprintf("  Mean: %.2f ms ± %.2f ms\n", result$mean_time_ms, result$std_time_ms))
+        cat(sprintf("  Mean: %.2f ms ± %.2f ms (parallel=%s)\n", 
+                    result$mean_time_ms, result$std_time_ms, use_parallel))
         results[[length(results) + 1]] <- result
     }
     
@@ -450,7 +460,7 @@ main <- function() {
     
     # Save results
     json_str <- toJSON(all_results, auto_unbox = TRUE, pretty = TRUE)
-    out_dir <- "benchmarks/output"
+    out_dir <- "output"
     if (!dir.exists(out_dir)) {
         dir.create(out_dir, recursive = TRUE)
     }

@@ -244,7 +244,7 @@ def compare_results(results_dict, tol=1e-6, loose_tol=0.01):
 
 if __name__ == "__main__":
     files = {
-        'statsmodels': 'output/statsmodels_validate.json',
+        'base_R': 'output/base_R_validate.json',
         'this_crate': 'output/fastLowess_validate.json'
     }
     

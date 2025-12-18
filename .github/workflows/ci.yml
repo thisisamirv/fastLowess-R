@@ -76,3 +76,50 @@ jobs:
       - name: Lint
         run: lintr::lint_package()
         shell: Rscript {0}
+
+  check-cran-readiness:
+    name: Check CRAN Readiness (Vendor & Size)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Verify Vendoring & Size
+        run: |
+          # 1. Vendor Dependencies
+          mkdir -p .cargo
+          cargo vendor > .cargo/config.toml
+
+          # 2. Fix Checksums (remove .gitignore entires if any exist)
+          # We do a quick python inline script similar to what we did locally
+          python3 -c '
+          import os, json
+          for root, _, files in os.walk("vendor"):
+              if ".cargo-checksum.json" in files:
+                  path = os.path.join(root, ".cargo-checksum.json")
+                  with open(path, "r") as f: d = json.load(f)
+                  files = d.get("files", {})
+                  removals = [k for k in files if ".gitignore" in k]
+                  if removals:
+                      for k in removals: del files[k]
+                      d["files"] = files
+                      with open(path, "w") as f: json.dump(d, f)
+          '
+
+          # 3. Build Source Package
+          R CMD build .
+
+          # 4. Check Size (< 5MB)
+          SIZE=$(du -k fastLowess_*.tar.gz | cut -f1)
+          if [ "$SIZE" -gt 5120 ]; then
+            echo "ERROR: Package size ${SIZE}KB exceeds CRAN limit of 5MB"
+            exit 1
+          else
+            echo "Package size ${SIZE}KB is within limits."
+          fi

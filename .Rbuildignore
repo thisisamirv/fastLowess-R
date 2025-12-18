@@ -21,4 +21,4 @@ target/
 
 # Development files
 ^Makefile$
-^Cargo\.lock$
+

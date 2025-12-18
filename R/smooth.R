@@ -40,6 +40,7 @@
 #' @param cv_method Cross-validation method. Options: "kfold" (default), "loocv"
 #'   (leave-one-out).
 #' @param cv_k Number of folds for k-fold cross-validation (default: 5).
+#' @param parallel Logical, whether to enable parallel processing (default: TRUE).
 #'
 #' @return A list containing: x (sorted x values), y (smoothed y values),
 #'   fraction_used, and optionally: standard_errors, confidence_lower,
@@ -72,7 +73,8 @@ smooth <- function(x,
                    max_iterations = NULL,
                    cv_fractions = NULL,
                    cv_method = "kfold",
-                   cv_k = 5L) {
+                   cv_k = 5L,
+                   parallel = TRUE) {
   # Validate inputs
   if (length(x) != length(y)) {
     stop("x and y must have the same length")
@@ -108,6 +110,7 @@ smooth <- function(x,
     cv_fractions,
     cv_method,
     cv_k,
+    parallel,
     PACKAGE = "fastLowess"
   )
 }

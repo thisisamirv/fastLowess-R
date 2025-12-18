@@ -6,7 +6,7 @@
 
 use extendr_api::prelude::*;
 
-use ::fastLowess::prelude::{
+use fastLowess::prelude::{
     Batch, CrossValidationStrategy, Lowess as LowessBuilder, LowessResult, Online,
     RobustnessMethod, Streaming, WeightFunction, ZeroWeightFallback,
 };
@@ -85,6 +85,7 @@ fn parse_zero_weight_fallback(name: &str) -> Result<ZeroWeightFallback> {
 /// @param cv_fractions Numeric vector of fractions to test for cross-validation (NULL to disable).
 /// @param cv_method CV method: "loocv" (leave-one-out) or "kfold". Default: "kfold".
 /// @param cv_k Number of folds for k-fold CV (default: 5).
+/// @param parallel Enable parallel execution (default: TRUE).
 /// @return A list with smoothed values and optional outputs.
 /// @export
 #[extendr]
@@ -108,6 +109,7 @@ fn smooth(
     cv_fractions: Nullable<Vec<f64>>,
     cv_method: &str,
     cv_k: i32,
+    parallel: bool,
 ) -> Result<List> {
     let wf = parse_weight_function(weight_function)?;
     let rm = parse_robustness_method(robustness_method)?;
@@ -169,6 +171,7 @@ fn smooth(
 
     let result = builder
         .adapter(Batch)
+        .parallel(parallel)
         .build()
         .map_err(|e| Error::Other(e.to_string()))?
         .fit(x, y)

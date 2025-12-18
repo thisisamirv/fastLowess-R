@@ -42,7 +42,8 @@ example_1_basic_smoothing <- function() {
     result <- smooth(
         x, y,
         fraction = 0.5, # Use 50% of data for each local fit
-        iterations = 3L # 3 robustness iterations
+        iterations = 3L, # 3 robustness iterations
+        parallel = TRUE # Enable parallel processing
     )
     duration <- as.numeric(Sys.time() - start_time, units = "secs")
 
@@ -65,7 +66,8 @@ example_2_with_intervals <- function() {
         x, y,
         fraction = 0.5,
         confidence_intervals = 0.95, # 95% confidence intervals
-        prediction_intervals = 0.95 # 95% prediction intervals
+        prediction_intervals = 0.95, # 95% prediction intervals
+        parallel = TRUE
     )
 
     cat(sprintf("%8s %12s %12s %12s\n", "X", "Y_smooth", "CI_Lower", "CI_Upper"))
@@ -102,7 +104,8 @@ example_3_robust_smoothing <- function() {
             fraction = 0.1,
             iterations = 3L,
             robustness_method = method,
-            return_robustness_weights = TRUE
+            return_robustness_weights = TRUE,
+            parallel = TRUE
         )
 
         if (!is.null(result$robustness_weights)) {
@@ -146,7 +149,8 @@ example_4_cross_validation <- function() {
             cv_fractions = fractions,
             cv_method = "kfold",
             cv_k = 5L,
-            return_diagnostics = TRUE
+            return_diagnostics = TRUE,
+            parallel = TRUE
         )
 
         # Use the result from the first iteration to get CV scores

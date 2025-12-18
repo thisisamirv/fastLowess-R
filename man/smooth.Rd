@@ -22,7 +22,8 @@ smooth(
   max_iterations = NULL,
   cv_fractions = NULL,
   cv_method = "kfold",
-  cv_k = 5L
+  cv_k = 5L,
+  parallel = TRUE
 )
 }
 \arguments{
@@ -78,6 +79,8 @@ NULL (default) disables cross-validation.}
 (leave-one-out).}
 
 \item{cv_k}{Number of folds for k-fold cross-validation (default: 5).}
+
+\item{parallel}{Logical, whether to enable parallel processing (default: TRUE).}
 }
 \value{
 A list containing: x (sorted x values), y (smoothed y values),

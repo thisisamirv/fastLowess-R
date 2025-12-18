@@ -38,4 +38,4 @@ tarpaulin-report.html
 *.Rcheck
 *.pdf
 vendor/
-
+.cargo/

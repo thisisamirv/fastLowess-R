@@ -101,7 +101,15 @@ check-r-no-manual:
 	@echo "Running R CMD check (without manual)..."
 	@R CMD build .
 	@R CMD check --no-manual fastLowess_*.tar.gz
+	@R CMD check --no-manual fastLowess_*.tar.gz
 	@echo "R CMD check complete!"
+
+# --- Release ---
+cran:
+	@echo "Preparing for CRAN submission..."
+	@./scripts/prepare_cran.sh
+	@$(MAKE) install
+	@echo "DONE! Package tarball is ready for submission."
 
 # --- Documentation ---
 doc: doc-default doc-serial
@@ -163,6 +171,7 @@ help:
 	@echo "R Package:"
 	@echo "  check-r        - Run R CMD check"
 	@echo "  check-r-no-manual - Run R CMD check (skip PDF manual)"
+	@echo "  cran           - Prepare for CRAN submission (offline build)"
 	@echo ""
 	@echo "Other:"
 	@echo "  doc            - Build Rust documentation"

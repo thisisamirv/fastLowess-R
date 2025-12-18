@@ -1,3 +1,0 @@
-useDynLib(fastLowess, .registration = TRUE)
-
-export(smooth, smooth_streaming, smooth_online)

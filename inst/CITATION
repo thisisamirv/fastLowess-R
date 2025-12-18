@@ -1,8 +1,0 @@
-bibentry(
-  bibtype = "Manual",
-  title   = "fastLowess: High-Performance LOWESS Smoothing for R",
-  author  = person("Amir", "Valizadeh"),
-  year    = "2025",
-  note    = "R package version 0.1.0",
-  url     = "https://github.com/thisisamirv/fastLowess-R"
-)

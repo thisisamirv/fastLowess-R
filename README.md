@@ -7,7 +7,7 @@
 
 ## Why This Package?
 
-- ⚡ **Blazingly Fast**: Sub-millisecond smoothing for 1000 points, significantly faster than base R
+- ⚡ **Blazingly Fast**: 1.5-2× faster for most workloads, up to 4.6× faster with delta optimization
 - 🎯 **Production-Ready**: Comprehensive error handling, numerical stability, extensive testing
 - 📊 **Feature-Rich**: Confidence/prediction intervals, multiple kernels, cross-validation
 - 🚀 **Scalable**: Parallel execution, streaming mode, delta optimization
@@ -30,14 +30,59 @@ print(result$y)
 
 ## Installation
 
-You can install the development version from GitHub:
+### Prerequisites
+
+This package requires **Rust** to compile from source, as it's built on the high-performance [fastLowess](https://github.com/thisisamirv/fastLowess) Rust crate.
+
+#### Installing Rust
+
+**Linux/macOS:**
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+**Windows:**
+Download and run [rustup-init.exe](https://rustup.rs/)
+
+**Verify installation:**
+
+```bash
+rustc --version
+cargo --version
+```
+
+You should see version numbers (e.g., `rustc 1.75.0`). If not, restart your terminal or add Rust to your PATH:
+
+```bash
+source $HOME/.cargo/env  # Linux/macOS
+```
+
+#### Installing the Package
+
+Once Rust is installed:
 
 ```r
+# Install from GitHub
 # install.packages("devtools")
 devtools::install_github("thisisamirv/fastLowess-R")
 ```
 
-*(Note: Requires cargo/rustc to compile from source)*
+**First-time installation may take 2-5 minutes** as it compiles the Rust code. Subsequent updates are faster.
+
+#### Troubleshooting
+
+**"cargo not found" error:**
+
+- Ensure Rust is in your PATH: `echo $PATH | grep cargo`
+- Restart R/RStudio after installing Rust
+- On Windows, you may need to install [Rtools](https://cran.r-project.org/bin/windows/Rtools/)
+
+**Compilation errors:**
+
+- Update Rust: `rustup update`
+- Ensure you have a C compiler (gcc on Linux, Xcode on macOS, Rtools on Windows)
+- Check R version: `R.version` (requires R ≥ 4.0)
 
 ## Features at a Glance
 
@@ -177,14 +222,58 @@ demo("batch_smoothing")
 
 ## Performance Benchmarks
 
-Comparison against Python `statsmodels` (pure Python/NumPy vs Rust extension). Note that `fastLowess-R` uses the same Rust backend, so performance is comparable.
+Benchmarked against base R's `stats::lowess` using `microbenchmark` for high-resolution timing. All tests use `fraction=0.3`, `iterations=3` with the same synthetic data.
 
-| Dataset Size  | statsmodels | fastLowess | Speedup  |
-| ------------- | ----------- | ---------- | -------- |
-| 100 points    | 1.79 ms     | 0.13 ms    | **14×**  |
-| 500 points    | 9.86 ms     | 0.26 ms    | **38×**  |
-| 1,000 points  | 22.80 ms    | 0.39 ms    | **59×**  |
-| 10,000 points | 742.99 ms   | 2.59 ms    | **287×** |
+### Basic Smoothing Performance
+
+| Dataset Size  | Base R lowess | fastLowess-R | Speedup    | Notes                    |
+| ------------- | ------------- | ------------ | ---------- | ------------------------ |
+| 100 points    | 0.09 ms       | 0.08 ms      | **1.14×**  | Comparable               |
+| 500 points    | 0.29 ms       | 0.28 ms      | **1.04×**  | Comparable               |
+| 1,000 points  | 0.46 ms       | 0.48 ms      | 0.96×      | Nearly identical         |
+| 5,000 points  | 2.16 ms       | 2.09 ms      | **1.03×**  | Comparable               |
+| 10,000 points | 4.11 ms       | 1.56 ms      | **2.63×**  | **Parallel advantage**   |
+
+### Key Performance Advantages
+
+**Delta Optimization** (5,000 points, `iterations=2`):
+
+| Configuration | Base R lowess | fastLowess-R | Speedup    |
+| ------------- | ------------- | ------------ | ---------- |
+| delta=0       | 62.00 ms      | 13.36 ms     | **4.64×**  |
+| delta=auto    | 1.58 ms       | 0.57 ms      | **2.78×**  |
+| delta=1       | 6.39 ms       | 2.00 ms      | **3.19×**  |
+| delta=10      | 0.91 ms       | 0.40 ms      | **2.24×**  |
+
+**Fraction Variations** (1,000 points):
+
+| Fraction | Base R lowess | fastLowess-R | Speedup    |
+| -------- | ------------- | ------------ | ---------- |
+| 0.1      | 0.20 ms       | 0.19 ms      | **1.07×**  |
+| 0.3      | 0.51 ms       | 0.24 ms      | **2.09×**  |
+| 0.5      | 0.70 ms       | 0.46 ms      | **1.55×**  |
+| 0.67     | 0.97 ms       | 0.40 ms      | **2.39×**  |
+| 0.8      | 1.10 ms       | 0.53 ms      | **2.08×**  |
+
+**Robustness Iterations** (1,000 points):
+
+| Iterations | Base R lowess | fastLowess-R | Speedup    |
+| ---------- | ------------- | ------------ | ---------- |
+| 0          | 0.13 ms       | 0.12 ms      | **1.07×**  |
+| 1          | 0.24 ms       | 0.11 ms      | **2.12×**  |
+| 3          | 0.50 ms       | 0.34 ms      | **1.47×**  |
+| 5          | 0.65 ms       | 0.44 ms      | **1.47×**  |
+| 10         | 1.17 ms       | 0.89 ms      | **1.32×**  |
+
+### Summary
+
+- ✅ **Delta optimization**: 2.2-4.6× faster (strongest advantage)
+- ✅ **Large datasets (≥10K)**: 2.6× faster with parallel processing
+- ✅ **All fractions**: 1.1-2.4× faster across the board
+- ✅ **All robustness iterations**: 1.1-2.1× faster
+- ✅ **Genomic data**: 2.6× faster for bioinformatics workflows
+
+**Methodology**: Benchmarks use `microbenchmark` with 10-20 iterations. Parallel processing intelligently disabled for datasets <10K points to avoid overhead. See `benchmarks/INTERPRETATION.md` for detailed analysis.
 
 ## Contributing
 

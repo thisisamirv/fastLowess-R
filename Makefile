@@ -82,9 +82,9 @@ test-rust:
 
 test-r:
 	@echo "Running R examples..."
-	@Rscript examples/batch_smoothing.R
-	@Rscript examples/online_smoothing.R
-	@Rscript examples/streaming_smoothing.R
+	@Rscript demo/batch_smoothing.R
+	@Rscript demo/online_smoothing.R
+	@Rscript demo/streaming_smoothing.R
 	@echo "R examples complete!"
 
 test-all: test-rust test-r

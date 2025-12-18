@@ -1,0 +1,16 @@
+TARGET_DIR = ../target
+LIBDIR = $(TARGET_DIR)/release
+STATLIB = $(LIBDIR)/libfastLowess.a
+
+# Linux linking (default)
+PKG_LIBS = -L$(LIBDIR) -Wl,--whole-archive -lfastLowess -Wl,--no-whole-archive -Wl,--gc-sections
+
+all: clean $(SHLIB)
+
+$(SHLIB): $(STATLIB)
+
+$(STATLIB):
+	cargo build --release --manifest-path=../Cargo.toml --target-dir $(TARGET_DIR)
+
+clean:
+	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS)

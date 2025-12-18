@@ -1,0 +1,16 @@
+TARGET_DIR = ../target
+LIBDIR = $(TARGET_DIR)/release
+STATLIB = $(LIBDIR)/libfastLowess.a
+
+# Windows linking with Rust std lib dependencies
+PKG_LIBS = -L$(LIBDIR) -Wl,--whole-archive -lfastLowess -Wl,--no-whole-archive -lws2_32 -luserenv -ladvapi32 -lbcrypt -lncrypt -lntdll -Wl,--export-all-symbols
+
+all: clean $(SHLIB)
+
+$(SHLIB): $(STATLIB)
+
+$(STATLIB):
+	cargo build --release --manifest-path=../Cargo.toml --target-dir $(TARGET_DIR)
+
+clean:
+	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS)

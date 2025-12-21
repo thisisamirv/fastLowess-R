@@ -1,203 +1,82 @@
-# Contributing to fastLowess (R)
+# Contributing to fastlowess (R)
 
-Thank you for your interest in contributing to `fastLowess`! We welcome bug reports, feature suggestions, documentation improvements, and code contributions.
+We welcome contributions via bug reports, feature requests, documentation improvements, and code changes.
 
-## Quick Links
+## Issues
 
-- 🐛 [Report a bug](https://github.com/thisisamirv/fastLowess-R/issues/new?labels=bug)
-- 💡 [Request a feature](https://github.com/thisisamirv/fastLowess-R/issues/new?labels=enhancement)
-- 📖 [Documentation](https://github.com/thisisamirv/fastLowess-R)
-- 💬 [Discussions](https://github.com/thisisamirv/fastLowess-R/discussions)
+Before opening a new issue, please search existing ones.
 
-## Code of Conduct
-
-Be respectful, inclusive, and constructive. We're here to build great software together.
-
-## Reporting Bugs
-
-**Before submitting**, search existing issues to avoid duplicates.
-
-Please include:
-
-- **Clear description** of the problem.
-- **Minimal Reproducible Example (reprex)**.
-- **Environment details**: `sessionInfo()` output in R.
-- **Expected vs Actual behavior**.
-
-**Example:**
-
-```r
-library(fastLowess)
-
-# This produces unexpected output
-x <- c(1, 2, 3)
-y <- c(1, 2, 3)
-smooth(x, y, fraction = 0.5)
-# Expected: ...
-# Actual: ...
-```
-
-## Suggesting Features
-
-Feature requests are welcome! Please:
-
-- **Check existing issues** first.
-- **Explain the use case** - why is this needed?
-- **Provide examples** of how it would work in R.
-- **Consider alternatives** - have you tried existing parameters?
-
-Areas of particular interest:
-
-- Performance optimizations.
-- Better error messages.
-- New kernels or robustness methods.
-
-## Pull Requests
-
-### Process
-
-1. **Fork** the repository and create a feature branch:
-
-   ```bash
-   git checkout -b feature/my-feature
-   ```
-
-2. **Make your changes** with clear, focused commits.
-
-3. **Add tests/examples**:
-   - Add a new demo in `demo/` if it's a major feature.
-   - Add examples in `R/` files (roxygen comments) for functions.
-
-4. **Ensure quality**:
-
-   ```bash
-   make check-all   # Runs Rust checks + R linting
-   make check-r     # Runs R CMD check
-   ```
-
-5. **Submit PR** with a clear description of changes.
-
-### PR Checklist
-
-- [ ] `make check-r` passes with **0 errors, 0 warnings**.
-- [ ] `make lint-r` passes (clean code style).
-- [ ] Documentation updated (`make document` run).
-- [ ] `cargo fmt` applied (if Rust code changed).
-- [ ] `cargo clippy` passes (if Rust code changed).
-- [ ] New features have examples or demos.
-- [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/).
+- **Bugs**: Include a minimal reproducible example (reprex), environment details (`sessionInfo()` in R), and expected vs actual behavior.
+- **Features**: Describe the use case and provide examples of the proposed R API or behavior.
 
 ## Development Setup
 
-This project uses [rextendr](https://github.com/extendr/rextendr) to bind Rust code to R.
+The project uses a `Makefile` to standardize development tasks and `extendr` to build the Rust bindings for R.
+
+```bash
+# Clone and branch
+git clone https://github.com/thisisamirv/fastLowess-R.git
+cd fastLowess-R
+git checkout -b feature/your-feature
+
+# Common commands
+make doc          # Generate documentation (roxygen2)
+make build        # Build and install the package
+make test         # Run the demonstration scripts
+make check        # Run all checks (formatters, linters, tests, R CMD check)
+```
 
 ### Prerequisites
 
-- **Rust**: Latest stable (`rustup update`).
+- **Rust**: Latest stable (1.85.0+)
 - **R**: 4.0+
-- **R Packages**: `devtools`, `roxygen2`, `lintr`.
+- **R Packages**: `devtools`, `roxygen2`, `lintr`
 
-### Setup
+## Pull Requests
 
-```bash
-# Clone your fork
-git clone https://github.com/YOUR_USERNAME/fastLowess-R.git
-cd fastLowess-R
+1. **Focus**: Keep PRs small and focused on a single change.
+2. **Tests**: Add or update demonstrations in `demo/` or examples in `R/` files.
+3. **Linting**: Ensure `make check` passes. We follow [Conventional Commits](https://www.conventionalcommits.org/).
+4. **Documentation**: Update roxygen2 comments in `R/` files and internal docs in `src/lib.rs`.
 
-# Install R dependencies
-Rscript -e 'install.packages(c("devtools", "roxygen2", "lintr"))'
+### Commitment Guidelines
 
-# Install project in development mode
-make install
-```
-
-### Development Commands
-
-We use a `Makefile` to simplify common tasks:
-
-```bash
-# --- Build & Install ---
-make install      # Build and install package
-make document     # Generate .Rd documentation (roxygen2)
-
-# --- Check & Test ---
-make test-r       # Run the demos/examples
-make check-r      # Run full R CMD check
-make lint-r       # Check R code style
-make fmt          # Format Rust code
-make clippy       # Check Rust code quality
-
-# --- Clean ---
-make clean        # Remove build artifacts
-```
+- Use `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, or `chore` types.
+- Scopes are optional but helpful (e.g., `bindings`, `docs`, `ci`).
 
 ## Project Structure
 
-```text
-fastLowess-R/
-├── R/                  # R wrapper functions
-├── src/                # Rust backend code
-│   └── lib.rs          # extendr bindings
-├── demo/               # Interactive R demos (Testing scripts)
-├── inst/               # Installed files (CITATION, AUTHORS)
-├── man/                # Generated documentation (.Rd) - DO NOT EDIT MANUALLY
-├── scripts/            # Helper scripts (prepare_cran.sh)
-├── Cargo.toml          # Rust dependencies
-└── DESCRIPTION         # R package metadata
-```
+`fastLowess-R` bridges the high-performance Rust core with an R-native API:
 
-## Testing Guidelines
+1. **Rust Core (`src/`)**: Contains the `extendr` bindings in `lib.rs` and vendored Rust dependencies.
+2. **R Package (`R/`)**: Contains the R wrapper functions, documentation templates, and user-facing API.
+3. **Demos (`demo/`)**: Functional demonstration scripts used for verification.
 
-We rely on **examples and demos** for verification.
+Most of the heavy lifting is done by the `fastLowess` Rust crate (<https://github.com/thisisamirv/fastLowess>).
 
-### Running Tests
+### Dependency Management
+
+Rust dependencies are vendored into `src/vendor/` to allow for CRAN-compliant, offline builds. To update these from crates.io, use:
 
 ```bash
-# Run all demos as a test suite
-make test-r
+make vendor-update
 ```
 
-### Writing Tests
+This command automates re-vendoring and cleans up checksums for CRAN portability.
 
-1. **Demos**: Create a `.R` script in `demo/` that sets up data, runs the function, and asserts/prints results.
-2. **Examples**: Add `@examples` blocks in your roxygen comments in `R/*.R`. These are checked by `R CMD check`.
+## Testing
 
-## Code Style
+Verification is performed via demonstration scripts and the standard `R CMD check`:
 
-### Rust Code
+- `demo/*.R`: Functional tests for batch, online, and streaming smoothing.
+- `R CMD check`: Verified via `make check-CMD` or `devtools::check()`.
 
-- Format with `cargo fmt`.
-- Follow strict clippy lints (`make clippy`).
+Please do not add tests directly to the package root. Add them to `demo/` or as `@examples` in the R documentation.
 
-### R Code
+### Benchmarks and Validation
 
-- Follow standard R style (tidyverse-like).
-- Use `make lint-r` to verify compliance.
-
-### Documentation
-
-- All external functions must have **roxygen2** documentation.
-- Update `DESCRIPTION` if you add dependencies.
-
-## Release Process (CRAN)
-
-1. **Update Version**: In `DESCRIPTION` and `Cargo.toml`.
-2. **Update Notes**: Edit `cran-comments.md`.
-3. **Prepare Tarball** (The most significant step):
-
-   Running `make cran` automates the release packaging. It:
-   - Vendors all Rust dependencies into `vendor/`.
-   - Creates a local `.cargo/config.toml`.
-   - Generates `inst/AUTHORS`.
-   - Builds the `.tar.gz`.
-
-   ```bash
-   make cran
-   ```
-
-4. **Submit**:
-   Upload the resulting `fastLowess_*.tar.gz` to CRAN.
+Integration accuracy is verified via the demo scripts. While performance benchmarks reside in the `fastLowess` Rust crate, we ensure the R bindings maintain consistency with the core engine.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the **AGPL-3.0 License**.
+By contributing, you agree that your work will be licensed under the project's existing license (AGPL-3.0).

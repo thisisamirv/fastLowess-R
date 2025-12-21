@@ -12,6 +12,7 @@ smooth(
   delta = NULL,
   weight_function = "tricube",
   robustness_method = "bisquare",
+  boundary_policy = "extend",
   confidence_intervals = NULL,
   prediction_intervals = NULL,
   return_diagnostics = FALSE,
@@ -19,7 +20,6 @@ smooth(
   return_robustness_weights = FALSE,
   zero_weight_fallback = "use_local_mean",
   auto_converge = NULL,
-  max_iterations = NULL,
   cv_fractions = NULL,
   cv_method = "kfold",
   cv_k = 5L,
@@ -32,14 +32,26 @@ smooth(
 \item{y}{Numeric vector of dependent variable values (same length as x).}
 
 \item{fraction}{Smoothing fraction, the proportion of data to use for each
-local regression (default: 0.67). Values between 0 and 1.}
+local regression (default: 0.67). Values between 0 and 1.
+\itemize{
+  \item **0.1-0.3**: Fine detail, captures rapid changes (may be noisy).
+  \item **0.4-0.6**: Balanced, good for most general-purpose applications.
+  \item **0.7-1.0**: Heavy smoothing, emphasizes global trends.
+}}
 
 \item{iterations}{Number of robustness iterations for outlier handling
-(default: 3). Use 0 for no robustness.}
+(default: 3). Use 0 for no robustness.
+\itemize{
+  \item **0**: No robustness (fastest, but sensitive to outliers).
+  \item **1-2**: Light contamination; standard recommended setting.
+  \item **3**: Default; good balance of speed and resistance.
+  \item **4-6**: Strong resistance; for heavily contaminated datasets.
+}}
 
 \item{delta}{Interpolation optimization threshold. Points closer than delta
 will use linear interpolation instead of full regression. NULL (default)
-auto-calculates based on data range.}
+auto-calculates based on 1 percent of the data range. Set to 0 for no
+interpolation.}
 
 \item{weight_function}{Kernel function for distance weighting. Options:
 "tricube" (default), "epanechnikov", "gaussian", "uniform", "biweight",
@@ -48,6 +60,10 @@ auto-calculates based on data range.}
 \item{robustness_method}{Method for computing robustness weights. Options:
 "bisquare" (default), "huber", "talwar".}
 
+\item{boundary_policy}{Handling of edge effects. Options: "extend" (default),
+"reflect", "zero". "extend" pads data at boundaries to maintain symmetric
+local neighborhoods, reducing boundary bias.}
+
 \item{confidence_intervals}{Confidence level for confidence intervals
 (e.g., 0.95 for 95 percent CI). NULL (default) disables.}
 
@@ -55,7 +71,7 @@ auto-calculates based on data range.}
 (e.g., 0.95 for 95 percent PI). NULL (default) disables.}
 
 \item{return_diagnostics}{Logical, whether to compute fit quality metrics
-(RMSE, MAE, R-squared, etc.). Default: FALSE.}
+(RMSE, MAE, R-squared, AIC, etc.). Default: FALSE.}
 
 \item{return_residuals}{Logical, whether to include residuals in output.
 Default: FALSE.}
@@ -66,39 +82,68 @@ robustness weights in output. Default: FALSE.}
 \item{zero_weight_fallback}{Fallback strategy when all weights are zero.
 Options: "use_local_mean" (default), "return_original", "return_none".}
 
-\item{auto_converge}{Tolerance for automatic convergence detection. NULL
-(default) disables auto-convergence.}
-
-\item{max_iterations}{Maximum number of robustness iterations when
-auto_converge is enabled. Default: 20.}
+\item{auto_converge}{Tolerance for automatic convergence detection in
+robustness iterations. NULL (default) disables auto-convergence.}
 
 \item{cv_fractions}{Numeric vector of fractions to test for cross-validation.
-NULL (default) disables cross-validation.}
+NULL (default) disables cross-validation. When provided, the internal
+engine selects the fraction that minimizes RMSE.}
 
 \item{cv_method}{Cross-validation method. Options: "kfold" (default), "loocv"
 (leave-one-out).}
 
 \item{cv_k}{Number of folds for k-fold cross-validation (default: 5).}
 
-\item{parallel}{Logical, whether to enable parallel processing (default: TRUE).}
+\item{parallel}{Logical, whether to enable parallel processing via Rayon
+(default: TRUE). Significant speedups for large datasets or many
+robustness iterations.}
 }
 \value{
-A list containing: x (sorted x values), y (smoothed y values),
-  fraction_used, and optionally: standard_errors, confidence_lower,
-  confidence_upper, prediction_lower, prediction_upper, residuals,
-  robustness_weights, iterations_used, cv_scores, diagnostics.
+A list containing:
+\itemize{
+  \item \code{x}: Sorted independent variable values.
+  \item \code{y}: Smoothed dependent variable values.
+  \item \code{fraction_used}: The fraction actually used (helpful if CV was
+    used).
+  \item \code{standard_errors}: Point-wise standard errors (if requested).
+  \item \code{confidence_lower}/\code{upper}: CI bounds (if requested).
+  \item \code{prediction_lower}/\code{upper}: PI bounds (if requested).
+  \item \code{residuals}: Model residuals (if requested).
+  \item \code{robustness_weights}: Final robustness weights (if requested).
+  \item \code{iterations_used}: Number of iterations actually performed.
+  \item \code{cv_scores}: RMSE scores for tested fractions (if CV was used).
+  \item \code{diagnostics}: List of metrics (RMSE, MAE, R2, AIC, etc.)
+    (if requested).
+}
 }
 \description{
 Perform LOWESS (Locally Weighted Scatterplot Smoothing) on the input data.
 This is the primary interface for LOWESS smoothing, processing the entire
 dataset in memory with optional parallel execution.
+
+## When to use batch smoothing:
+\itemize{
+  \item Dataset fits comfortably in memory.
+  \item Need all features (confidence intervals, cross-validation,
+    diagnostics).
+  \item Processing complete offline datasets for analysis or visualization.
+}
 }
 \examples{
 # Basic smoothing
-x <- 1:100
-y <- sin(x / 10) + rnorm(100, sd = 0.2)
+x <- seq(1, 10, length.out = 100)
+y <- sin(x) + rnorm(100, sd = 0.2)
 result <- smooth(x, y, fraction = 0.3)
 plot(x, y)
 lines(result$x, result$y, col = "red", lwd = 2)
+
+# Robust smoothing with intervals
+result <- smooth(x, y,
+  fraction = 0.5, iterations = 5,
+  confidence_intervals = 0.95,
+  prediction_intervals = 0.95
+)
+lines(result$x, result$confidence_lower, col = "blue", lty = 2)
+lines(result$x, result$confidence_upper, col = "blue", lty = 2)
 
 }

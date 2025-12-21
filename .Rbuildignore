@@ -7,6 +7,15 @@ target/
 ^\.gitignore$
 ^\.github$
 ^CHANGELOG\.md$
+^CONTRIBUTING\.md$
+^cran-comments\.md$
+^scripts$
+^scripts/.*
+^vendor$
+^vendor/.*
+^\.cargo$
+^Cargo\.toml$
+^Cargo\.lock$
 
 # R check output
 \.Rcheck$
@@ -21,4 +30,6 @@ target/
 
 # Development files
 ^Makefile$
-
+^fastlowess_.*\.tar\.gz$
+^\.Rbuildignore$
+^cran-comments\.md$

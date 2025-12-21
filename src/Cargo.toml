@@ -1,6 +1,6 @@
 [package]
 name = "fastLowess-R"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85.0"
 
@@ -18,23 +18,16 @@ homepage = "https://github.com/thisisamirv/fastLowess-R"
 keywords = ["lowess", "smoothing", "statistics", "regression", "bioinformatics"]
 categories = ["science", "algorithms"]
 
-include = [
-    "src/**/*",
-    "docs/**/*.svg",
-    "fastLowess/**/*",
-    "Cargo.toml",
-    "README.md",
-    "LICENSE",
-    "CHANGELOG.md",
-]
+include = ["Cargo.toml", "lib.rs", "vendor/**/*", "README.md", "LICENSE"]
 
 # Build
 [dependencies]
-fastLowess = { version = "0.1", features = ["dev"] }
+fastLowess = { path = "vendor/fastLowess", version = "0.2.1", features = ["dev"] }
 extendr-api = "0.8"
 
 [lib]
-name = "fastLowess"
+name = "fastlowess"
+path = "lib.rs"
 crate-type = ["staticlib", "rlib"]
 
 [features]
@@ -50,3 +43,7 @@ codegen-units = 1
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+
+[patch.crates-io]
+lowess = { path = "vendor/lowess" }

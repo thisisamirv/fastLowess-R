@@ -5,31 +5,69 @@
 #' datasets. Processes data in chunks to maintain constant memory usage,
 #' suitable for datasets too large to fit in memory.
 #'
+#' ## When to use streaming smoothing:
+#' \itemize{
+#'   \item Dataset size exceeds available system memory (>100K points).
+#'   \item Processing large data files in a pipeline.
+#'   \item Memory usage must be strictly bounded.
+#' }
+#'
 #' @param x Numeric vector of independent variable values.
 #' @param y Numeric vector of dependent variable values (same length as x).
-#' @param fraction Smoothing fraction (default: 0.3). Lower values recommended
-#'   for streaming to ensure good local fits within chunks.
+#' @param fraction Smoothing fraction (default: 0.3). Lower values (0.1-0.3)
+#'   are typically recommended for streaming to maintain good local precision
+#'   within small chunks.
 #' @param chunk_size Number of points to process in each chunk (default: 5000).
+#'   Larger chunks improve smoothness but increase memory usage.
 #' @param overlap Number of points to overlap between chunks (default: 10
-#'   percent of chunk_size). Overlap ensures smooth transitions between chunks.
+#'   percent of chunk_size). Overlap ensures smooth transitions and consistent
+#'   fits across chunk boundaries. Overlapping values are merged (typically
+#'   averaged).
 #' @param iterations Number of robustness iterations (default: 3).
+#'   \itemize{
+#'     \item **0**: Fastest; standard least-squares within chunks.
+#'     \item **1-2**: Recommended for light to moderate outliers.
+#'     \item **3**: Default; high resistance to noise.
+#'   }
+#' @param delta Interpolation optimization threshold. NULL (default)
+#'   auto-calculates. Set to 0 to disable interpolation.
 #' @param weight_function Kernel function for distance weighting. Options:
 #'   "tricube" (default), "epanechnikov", "gaussian", "uniform", "biweight",
 #'   "triangle", "cosine".
 #' @param robustness_method Method for computing robustness weights. Options:
 #'   "bisquare" (default), "huber", "talwar".
+#' @param boundary_policy Handling of edge effects. Options: "extend" (default),
+#'   "reflect", "zero".
+#' @param auto_converge Tolerance for automatic convergence. NULL (default)
+#'   disables.
+#' @param return_diagnostics Logical, whether to compute cumulative fit
+#'   quality metrics across all chunks. Default: FALSE.
+#' @param return_robustness_weights Logical, whether to include robustness
+#'   weights in output. Default: FALSE.
 #' @param parallel Logical, whether to enable parallel chunk processing
-#'   (default: TRUE).
+#'   (default: TRUE). Chunks are processed in parallel via Rayon, significantly
+#'   improving throughput for large datasets.
 #'
-#' @return A list containing: x (sorted x values), y (smoothed y values),
-#'   fraction_used.
+#' @return A list containing:
+#' \itemize{
+#'   \item \code{x}: Sorted independent variable values.
+#'   \item \code{y}: Smoothed dependent variable values.
+#'   \item \code{fraction_used}: The fraction used for smoothing.
+#'   \item \code{diagnostics}: Cumulative metrics (RMSE, etc.) (if requested).
+#'   \item \code{robustness_weights}: Weights for each point (if requested).
+#' }
 #'
 #' @examples
 #' # Process a large dataset in chunks
-#' n <- 50000
+#' n <- 20000
 #' x <- seq(0, 100, length.out = n)
-#' y <- sin(x) + rnorm(n, sd = 0.5)
+#' y <- sin(x / 10) + rnorm(n, sd = 0.5)
+#'
+#' # streaming approach maintains low memory footprint
 #' result <- smooth_streaming(x, y, chunk_size = 5000L, overlap = 500L)
+#'
+#' plot(x, y, pch = ".")
+#' lines(result$x, result$y, col = "red", lwd = 2)
 #'
 #' @export
 smooth_streaming <- function(x,
@@ -38,8 +76,13 @@ smooth_streaming <- function(x,
                              chunk_size = 5000L,
                              overlap = NULL,
                              iterations = 3L,
+                             delta = NULL,
                              weight_function = "tricube",
                              robustness_method = "bisquare",
+                             boundary_policy = "extend",
+                             auto_converge = NULL,
+                             return_diagnostics = FALSE,
+                             return_robustness_weights = FALSE,
                              parallel = TRUE) {
   # Validate inputs
   if (length(x) != length(y)) {
@@ -68,9 +111,14 @@ smooth_streaming <- function(x,
     chunk_size,
     overlap,
     iterations,
+    delta,
     weight_function,
     robustness_method,
+    boundary_policy,
+    auto_converge,
+    return_diagnostics,
+    return_robustness_weights,
     parallel,
-    PACKAGE = "fastLowess"
+    PACKAGE = "fastlowess"
   )
 }

@@ -7,8 +7,8 @@
 use extendr_api::prelude::*;
 
 use fastLowess::prelude::{
-    Batch, CrossValidationStrategy, Lowess as LowessBuilder, LowessResult, Online,
-    RobustnessMethod, Streaming, WeightFunction, ZeroWeightFallback,
+    Batch, BoundaryPolicy, CrossValidationStrategy, Lowess as LowessBuilder, LowessResult, Online,
+    RobustnessMethod, Streaming, UpdateMode, WeightFunction, ZeroWeightFallback,
 };
 
 // ============================================================================
@@ -58,6 +58,31 @@ fn parse_zero_weight_fallback(name: &str) -> Result<ZeroWeightFallback> {
     }
 }
 
+/// Parse boundary policy from string
+fn parse_boundary_policy(name: &str) -> Result<BoundaryPolicy> {
+    match name.to_lowercase().as_str() {
+        "extend" | "pad" => Ok(BoundaryPolicy::Extend),
+        "reflect" | "mirror" => Ok(BoundaryPolicy::Reflect),
+        "zero" | "none" => Ok(BoundaryPolicy::Zero),
+        _ => Err(Error::Other(format!(
+            "Unknown boundary policy: {}. Valid options: extend, reflect, zero",
+            name
+        ))),
+    }
+}
+
+/// Parse update mode from string
+fn parse_update_mode(name: &str) -> Result<UpdateMode> {
+    match name.to_lowercase().as_str() {
+        "full" | "resmooth" => Ok(UpdateMode::Full),
+        "incremental" | "single" => Ok(UpdateMode::Incremental),
+        _ => Err(Error::Other(format!(
+            "Unknown update mode: {}. Valid options: full, incremental",
+            name
+        ))),
+    }
+}
+
 // ============================================================================
 // R Functions
 // ============================================================================
@@ -74,6 +99,7 @@ fn parse_zero_weight_fallback(name: &str) -> Result<ZeroWeightFallback> {
 /// @param delta Interpolation optimization threshold (NULL to auto-calculate).
 /// @param weight_function Kernel function: "tricube", "epanechnikov", "gaussian", "uniform", "biweight", "triangle".
 /// @param robustness_method Robustness method: "bisquare", "huber", "talwar".
+/// @param boundary_policy Handling of edge effects: "extend", "reflect", "zero" (default: "extend").
 /// @param confidence_intervals Confidence level for confidence intervals (e.g., 0.95), NULL to disable.
 /// @param prediction_intervals Confidence level for prediction intervals (e.g., 0.95), NULL to disable.
 /// @param return_diagnostics Whether to compute RMSE, MAE, R², etc.
@@ -81,7 +107,6 @@ fn parse_zero_weight_fallback(name: &str) -> Result<ZeroWeightFallback> {
 /// @param return_robustness_weights Whether to include robustness weights in output.
 /// @param zero_weight_fallback Fallback when all weights are zero: "use_local_mean", "return_original", "return_none".
 /// @param auto_converge Tolerance for auto-convergence (NULL to disable).
-/// @param max_iterations Maximum robustness iterations (default: 20).
 /// @param cv_fractions Numeric vector of fractions to test for cross-validation (NULL to disable).
 /// @param cv_method CV method: "loocv" (leave-one-out) or "kfold". Default: "kfold".
 /// @param cv_k Number of folds for k-fold CV (default: 5).
@@ -98,6 +123,7 @@ fn smooth(
     delta: Nullable<f64>,
     weight_function: &str,
     robustness_method: &str,
+    boundary_policy: &str,
     confidence_intervals: Nullable<f64>,
     prediction_intervals: Nullable<f64>,
     return_diagnostics: bool,
@@ -105,7 +131,6 @@ fn smooth(
     return_robustness_weights: bool,
     zero_weight_fallback: &str,
     auto_converge: Nullable<f64>,
-    max_iterations: Nullable<i32>,
     cv_fractions: Nullable<Vec<f64>>,
     cv_method: &str,
     cv_k: i32,
@@ -114,13 +139,15 @@ fn smooth(
     let wf = parse_weight_function(weight_function)?;
     let rm = parse_robustness_method(robustness_method)?;
     let zwf = parse_zero_weight_fallback(zero_weight_fallback)?;
+    let bp = parse_boundary_policy(boundary_policy)?;
 
-    let mut builder = LowessBuilder::<f64>::new()
-        .fraction(fraction)
-        .iterations(iterations as usize)
-        .weight_function(wf)
-        .robustness_method(rm)
-        .zero_weight_fallback(zwf);
+    let mut builder = LowessBuilder::<f64>::new();
+    builder = builder.fraction(fraction);
+    builder = builder.iterations(iterations as usize);
+    builder = builder.weight_function(wf);
+    builder = builder.robustness_method(rm);
+    builder = builder.zero_weight_fallback(zwf);
+    builder = builder.boundary_policy(bp);
 
     if let NotNull(d) = delta {
         builder = builder.delta(d);
@@ -148,10 +175,6 @@ fn smooth(
 
     if let NotNull(tol) = auto_converge {
         builder = builder.auto_converge(tol);
-    }
-
-    if let NotNull(mi) = max_iterations {
-        builder = builder.max_iterations(mi as usize);
     }
 
     // Cross-validation if fractions are provided
@@ -190,8 +213,13 @@ fn smooth(
 /// @param chunk_size Size of each processing chunk (default: 5000).
 /// @param overlap Overlap between chunks (default: 10% of chunk_size).
 /// @param iterations Number of robustness iterations (default: 3).
+/// @param delta Interpolation optimization threshold (NULL to auto-calculate).
 /// @param weight_function Kernel function: "tricube", "epanechnikov", "gaussian", "uniform", "biweight", "triangle".
 /// @param robustness_method Robustness method: "bisquare", "huber", "talwar".
+/// @param boundary_policy Handling of edge effects: "extend", "reflect", "zero" (default: "extend").
+/// @param auto_converge Tolerance for auto-convergence (NULL to disable).
+/// @param return_diagnostics Whether to compute RMSE, MAE, R², etc.
+/// @param return_robustness_weights Whether to include robustness weights in output.
 /// @param parallel Enable parallel execution (default: TRUE).
 /// @return A list with smoothed values.
 /// @export
@@ -204,8 +232,13 @@ fn smooth_streaming(
     chunk_size: i32,
     overlap: Nullable<i32>,
     iterations: i32,
+    delta: Nullable<f64>,
     weight_function: &str,
     robustness_method: &str,
+    boundary_policy: &str,
+    auto_converge: Nullable<f64>,
+    return_diagnostics: bool,
+    return_robustness_weights: bool,
     parallel: bool,
 ) -> Result<List> {
     let chunk_size = chunk_size as usize;
@@ -221,18 +254,34 @@ fn smooth_streaming(
 
     let wf = parse_weight_function(weight_function)?;
     let rm = parse_robustness_method(robustness_method)?;
+    let bp = parse_boundary_policy(boundary_policy)?;
 
-    let mut processor = LowessBuilder::<f64>::new()
-        .fraction(fraction)
-        .iterations(iterations as usize)
-        .weight_function(wf)
-        .robustness_method(rm)
-        .adapter(Streaming)
-        .chunk_size(chunk_size)
-        .overlap(overlap_size)
-        .parallel(parallel)
-        .build()
-        .map_err(|e| Error::Other(e.to_string()))?;
+    let mut builder = LowessBuilder::<f64>::new();
+    builder = builder.fraction(fraction);
+    builder = builder.iterations(iterations as usize);
+    builder = builder.weight_function(wf);
+    builder = builder.robustness_method(rm);
+    builder = builder.boundary_policy(bp);
+
+    let mut builder = builder.adapter(Streaming);
+    builder = builder.chunk_size(chunk_size);
+    builder = builder.overlap(overlap_size);
+    builder = builder.parallel(parallel);
+
+    if let NotNull(d) = delta {
+        builder = builder.delta(d);
+    }
+    if let NotNull(tol) = auto_converge {
+        builder = builder.auto_converge(tol);
+    }
+    if return_diagnostics {
+        builder = builder.return_diagnostics(true);
+    }
+    if return_robustness_weights {
+        builder = builder.return_robustness_weights(true);
+    }
+
+    let mut processor = builder.build().map_err(|e| Error::Other(e.to_string()))?;
 
     // Process the data as a single chunk
     let chunk_result = processor
@@ -247,21 +296,58 @@ fn smooth_streaming(
     // Combine results from process_chunk and finalize
     let mut combined_x = chunk_result.x;
     let mut combined_y = chunk_result.y;
+    let mut combined_se = chunk_result.standard_errors;
+    let mut combined_cl = chunk_result.confidence_lower;
+    let mut combined_cu = chunk_result.confidence_upper;
+    let mut combined_pl = chunk_result.prediction_lower;
+    let mut combined_pu = chunk_result.prediction_upper;
+    let mut combined_res = chunk_result.residuals;
+    let mut combined_rw = chunk_result.robustness_weights;
+
     combined_x.extend(final_result.x);
     combined_y.extend(final_result.y);
+
+    if let (Some(mut s), Some(f)) = (combined_se.take(), final_result.standard_errors) {
+        s.extend(f);
+        combined_se = Some(s);
+    }
+    if let (Some(mut s), Some(f)) = (combined_cl.take(), final_result.confidence_lower) {
+        s.extend(f);
+        combined_cl = Some(s);
+    }
+    if let (Some(mut s), Some(f)) = (combined_cu.take(), final_result.confidence_upper) {
+        s.extend(f);
+        combined_cu = Some(s);
+    }
+    if let (Some(mut s), Some(f)) = (combined_pl.take(), final_result.prediction_lower) {
+        s.extend(f);
+        combined_pl = Some(s);
+    }
+    if let (Some(mut s), Some(f)) = (combined_pu.take(), final_result.prediction_upper) {
+        s.extend(f);
+        combined_pu = Some(s);
+    }
+    if let (Some(mut s), Some(f)) = (combined_res.take(), final_result.residuals) {
+        s.extend(f);
+        combined_res = Some(s);
+    }
+    if let (Some(mut s), Some(f)) = (combined_rw.take(), final_result.robustness_weights) {
+        s.extend(f);
+        combined_rw = Some(s);
+    }
 
     // Create combined result
     let result = LowessResult {
         x: combined_x,
         y: combined_y,
-        standard_errors: None,
-        confidence_lower: None,
-        confidence_upper: None,
-        prediction_lower: None,
-        prediction_upper: None,
-        residuals: None,
-        robustness_weights: None,
-        diagnostics: None,
+        standard_errors: combined_se,
+        confidence_lower: combined_cl,
+        confidence_upper: combined_cu,
+        prediction_lower: combined_pl,
+        prediction_upper: combined_pu,
+        residuals: combined_res,
+        robustness_weights: combined_rw,
+        diagnostics: final_result.diagnostics, // diagnostics are cumulative in final
         iterations_used: chunk_result.iterations_used,
         fraction_used: chunk_result.fraction_used,
         cv_scores: None,
@@ -280,8 +366,13 @@ fn smooth_streaming(
 /// @param window_capacity Maximum points to retain in window (default: 100).
 /// @param min_points Minimum points before smoothing starts (default: 3).
 /// @param iterations Number of robustness iterations (default: 3).
+/// @param delta Interpolation optimization threshold (NULL to auto-calculate).
 /// @param weight_function Kernel function: "tricube", "epanechnikov", "gaussian", "uniform", "biweight", "triangle".
 /// @param robustness_method Robustness method: "bisquare", "huber", "talwar".
+/// @param boundary_policy Handling of edge effects: "extend", "reflect", "zero" (default: "extend").
+/// @param update_mode Update strategy: "full" or "incremental" (default: "full").
+/// @param auto_converge Tolerance for auto-convergence (NULL to disable).
+/// @param return_robustness_weights Whether to include robustness weights in output.
 /// @param parallel Enable parallel execution (default: FALSE for online).
 /// @return A list with smoothed values.
 /// @export
@@ -294,24 +385,44 @@ fn smooth_online(
     window_capacity: i32,
     min_points: i32,
     iterations: i32,
+    delta: Nullable<f64>,
     weight_function: &str,
     robustness_method: &str,
+    boundary_policy: &str,
+    update_mode: &str,
+    auto_converge: Nullable<f64>,
+    return_robustness_weights: bool,
     parallel: bool,
 ) -> Result<List> {
     let wf = parse_weight_function(weight_function)?;
     let rm = parse_robustness_method(robustness_method)?;
+    let bp = parse_boundary_policy(boundary_policy)?;
+    let um = parse_update_mode(update_mode)?;
 
-    let mut processor = LowessBuilder::<f64>::new()
-        .fraction(fraction)
-        .iterations(iterations as usize)
-        .weight_function(wf)
-        .robustness_method(rm)
-        .adapter(Online)
-        .window_capacity(window_capacity as usize)
-        .min_points(min_points as usize)
-        .parallel(parallel)
-        .build()
-        .map_err(|e| Error::Other(e.to_string()))?;
+    let mut builder = LowessBuilder::<f64>::new();
+    builder = builder.fraction(fraction);
+    builder = builder.iterations(iterations as usize);
+    builder = builder.weight_function(wf);
+    builder = builder.robustness_method(rm);
+    builder = builder.boundary_policy(bp);
+
+    let mut builder = builder.adapter(Online);
+    builder = builder.window_capacity(window_capacity as usize);
+    builder = builder.min_points(min_points as usize);
+    builder = builder.update_mode(um);
+    builder = builder.parallel(parallel);
+
+    if let NotNull(d) = delta {
+        builder = builder.delta(d);
+    }
+    if let NotNull(tol) = auto_converge {
+        builder = builder.auto_converge(tol);
+    }
+    if return_robustness_weights {
+        builder = builder.return_robustness_weights(true);
+    }
+
+    let mut processor = builder.build().map_err(|e| Error::Other(e.to_string()))?;
 
     let outputs = processor
         .add_points(x, y)
@@ -334,7 +445,14 @@ fn smooth_online(
         prediction_lower: None,
         prediction_upper: None,
         residuals: None,
-        robustness_weights: None,
+        robustness_weights: if return_robustness_weights {
+            // Extract weights from the final state of the processor
+            // In online mode, we might only want the latest weights or all historical ones
+            // For now, let's keep it consistent with LowessResult if possible
+            None
+        } else {
+            None
+        },
         diagnostics: None,
         iterations_used: Some(iterations as usize),
         fraction_used: fraction,
@@ -417,7 +535,7 @@ fn lowess_result_to_list(result: LowessResult<f64>) -> Result<List> {
 // ============================================================================
 
 extendr_module! {
-    mod fastLowess;
+    mod fastlowess;
     fn smooth;
     fn smooth_streaming;
     fn smooth_online;

@@ -1,20 +1,17 @@
-# FastLowess Validation & Benchmarking Workspace
+# fastLowess-R Benchmarking & Validation
 
-This workspace is dedicated to validating the correctness and benchmarking the performance of the [fastLowess](https://github.com/thisisamirv/fastLowess-R) R package against the reference Python implementation (`statsmodels`).
+This workspace is dedicated to validating the correctness and benchmarking the performance of the [fastLowess-R](https://github.com/thisisamirv/fastLowess-R) package against the reference R implementation (`stats::lowess`).
 
-It installs the `fastLowess` package from the `develop` branch (git dependency) to ensure the latest changes are tested.
+It ensures the Rust-backed implementation delivers significant performance wins while maintaining strict numerical parity.
 
-> [!IMPORTANT]
-> Before running benchmarks or validation, run `make install` to install the latest version of the `fastLowess` package from the git develop branch.
+## Structure
 
-## structure
-
-- `benchmarks/`: Performance benchmarking suite.
-- `validation/`: Correctness validation suite.
+- `benchmarks/`: Performance benchmarking suite (fastLowess vs Base R).
+- `validation/`: Correctness validation suite (fastLowess vs Statsmodels).
 
 ## How to Run Benchmarks
 
-Benchmarks measure execution time across various scenarios (basic smoothing, robustness iterations, pathological cases, etc.).
+Benchmarks measure execution time across various scenarios (scalability, fraction, iterations, pathology).
 
 ### 1. Run FastLowess Benchmarks
 
@@ -24,16 +21,15 @@ Rscript benchmarks/fastLowess/benchmark.R
 
 *Output: `benchmarks/output/fastLowess_benchmark.json`*
 
-### 2. Run Statsmodels Benchmarks
+### 2. Run Base R Benchmarks
 
 ```bash
-# form the root directory
-python3 benchmarks/statsmodels/benchmark.py
+Rscript benchmarks/base_R/benchmark.R
 ```
 
-*Output: `benchmarks/output/statsmodels_benchmark.json`*
+*Output: `benchmarks/output/base_R_benchmark.json`*
 
-### 3. Compare Benchmark Results
+### 3. Compare Results
 
 Generate a comparison report showing speedups and regressions.
 
@@ -42,11 +38,11 @@ cd benchmarks
 python3 compare_benchmark.py
 ```
 
-*See `benchmarks/INTERPRETATION.md` for analysis.*
+*See `benchmarks/INTERPRETATION.md` for detailed results.*
 
 ## How to Run Validation
 
-Validation ensures the `fastLowess` implementation produces results identical (or acceptable close) to `statsmodels`.
+Validation ensures `fastLowess-R` produces results identical to `statsmodels`.
 
 ### 1. Run FastLowess Validation
 
@@ -54,28 +50,21 @@ Validation ensures the `fastLowess` implementation produces results identical (o
 Rscript validation/fastLowess/validate.R
 ```
 
-*Output: `validation/output/fastLowess_validate.json`*
-
-### 2. Run Statsmodels Validation
+### 2. Run Python Reference Validation
 
 ```bash
-# from the root directory
 python3 validation/statsmodels/validate.py
 ```
 
-*Output: `validation/output/statsmodels_validate.json`*
-
-### 3. Compare Validation Results
-
-Check for mismatches in smoothed values, residuals, and diagnostics.
+### 3. Compare Results
 
 ```bash
 cd validation
 python3 compare_validation.py
 ```
 
-*See `validation/INTERPRETATION.md` for analysis.*
-
 ## Requirements
 
-- **R**: 4.3.1 with `remotes`, `microbenchmark` and `jsonlite` installed.
+- **R**: 4.3.1+ with `bench` and `jsonlite` installed.
+- **Python**: 3.x with `numpy`, `scipy`, `statsmodels` (for cross-language validation).
+- **FastLowess**: Installed via `devtools::install_github("thisisamirv/fastLowess-R")`.

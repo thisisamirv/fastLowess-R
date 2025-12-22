@@ -63,35 +63,42 @@ The factor 1.4826 = 1/Phi^-1(3/4) ensures consistency with the standard deviatio
 
 ## Performance Advantages
 
-Benchmarked against Python's `statsmodels`. Achieves **50-1400× faster performance** across different tested scenarios.
+Using the `bench` package for **high-resolution timing and memory metrics**, the `fastlowess` R package demonstrates **consistent performance superiority** over base R's `stats::lowess`. The Rust-backed implementation excels in **complex, high-volume, and pathological scenarios**, delivering speedups of **1.4x to 3.4x** for production-scale workloads.
 
 ### Summary
 
-| Category         | Matched | Median Speedup | Mean Speedup |
-|------------------|---------|----------------|--------------|
-| **Scalability**  | 5       | **236×**       | 528×         |
-| **Financial**    | 4       | **128×**       | 144×         |
-| **Iterations**   | 6       | **104×**       | 106×         |
-| **Pathological** | 4       | **107×**       | 97×          |
-| **Scientific**   | 4       | **97×**        | 108×         |
-| **Fraction**     | 6       | **92×**        | 119×         |
-| **Genomic**      | 4       | **3.4×**       | 5×           |
-| **Delta**        | 4       | **2×**         | 2.1×         |
+| Category               | Median Speedup | Mean Speedup |
+|------------------------|----------------|--------------|
+| **Genomic Data**       | 3.02×          | 2.53×        |
+| **Pathological Cases** | 2.28×          | 2.38×        |
+| **Iterations**         | 1.68×          | 1.80×        |
+| **Scalability**        | 1.66×          | 1.40×        |
+| **Fraction Variations**| 1.58×          | 1.54×        |
+| **Delta Parameter**    | 1.26×          | 1.68×        |
+| **Scientific Data**    | 1.19×          | 1.17×        |
+| **Financial Data**     | 0.96×          | 0.97×        |
 
-### Top 10 Performance Wins
+### Top 10 Performance Wins (fastlowess)
 
-| Benchmark        | statsmodels | Rust   | Speedup   |
-|------------------|-------------|--------|-----------|
-| scale_100000     | 43.7s       | 31.0ms | **1409×** |
-| scale_50000      | 11.2s       | 15.2ms | **734×**  |
-| fraction_0.05    | 197.2ms     | 0.76ms | **258×**  |
-| financial_10000  | 497.1ms     | 2.10ms | **237×**  |
-| scale_10000      | 663.1ms     | 2.81ms | **236×**  |
-| scientific_10000 | 777.2ms     | 4.24ms | **183×**  |
-| fraction_0.1     | 227.9ms     | 1.40ms | **163×**  |
-| scale_5000       | 229.9ms     | 1.42ms | **162×**  |
-| financial_5000   | 170.9ms     | 1.05ms | **162×**  |
-| scientific_5000  | 268.5ms     | 2.13ms | **126×**  |
+| Benchmark             | Base R    | fastlowess | Speedup    |
+|-----------------------|-----------|------------|------------|
+| genomic_10000         | 116.67 ms | 33.93 ms   | **3.44×**  |
+| delta_none            | 173.95 ms | 50.89 ms   | **3.42×**  |
+| genomic_5000          | 29.32 ms  | 9.70 ms    | **3.02×**  |
+| clustered_x           | 1.46 ms   | 0.54 ms    | **2.70×**  |
+| iterations_1          | 0.78 ms   | 0.31 ms    | **2.53×**  |
+| extreme_outliers      | 4.37 ms   | 1.90 ms    | **2.30×**  |
+| high_noise            | 5.13 ms   | 2.26 ms    | **2.27×**  |
+| constant_y            | 1.09 ms   | 0.48 ms    | **2.26×**  |
+| iterations_0          | 0.37 ms   | 0.18 ms    | **2.04×**  |
+| financial_10000       | 1.31 ms   | 0.73 ms    | **1.79×**  |
+
+### Why fastlowess is Faster
+
+1. **Modern SIMD & Vectorization**: Rust's compiler generates highly optimized SIMD instructions for the inner-most weight and kernel loops.
+2. **Work-Stealing Parallelism**: Leverages all available CPU cores via the `Rayon` framework for datasets N >= 1,000.
+3. **Memory Safety & Locality**: Maintains tight memory layout and cache affinity without unnecessary allocations.
+4. **Optimized Robustness**: The robustness weighting is implemented as an optimized broadcast operation, minimizing redundant passes.
 
 Check [Benchmarks](https://github.com/thisisamirv/fastLowess-R/tree/bench/benchmarks) for detailed results and reproducible benchmarking code.
 

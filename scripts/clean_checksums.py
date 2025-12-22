@@ -7,17 +7,28 @@ import sys
 def clean_checksums(vendor_dir):
     print(f"Cleaning checksums in {vendor_dir}...")
     
-    # 1. Remove non-essential directories to save space and avoid R CMD build issues
-    # CRAN has a 5MB limit, and R CMD build sometimes excludes 'tests' directories.
-    STRIP_DIRS = ["tests", "benches", "examples", "doc", "docs"]
+    # 1. Remove non-essential directories
+    STRIP_DIRS = ["tests", "benches", "examples", "doc", "docs", ".github", ".config"]
     
     for root, dirs, files in os.walk(vendor_dir):
+        # Remove hidden directories and STRIP_DIRS
         for d in list(dirs):
-            if d in STRIP_DIRS:
+            if d.startswith(".") or d in STRIP_DIRS:
                 full_path = os.path.join(root, d)
                 print(f"  Stripping directory: {full_path}")
-                shutil.rmtree(full_path)
+                shutil.rmtree(full_path, ignore_errors=True)
                 dirs.remove(d)
+
+    # 2. Remove hidden files (except checksums)
+    for root, dirs, files in os.walk(vendor_dir):
+        for f in files:
+            if f.startswith(".") and f != ".cargo-checksum.json":
+                full_path = os.path.join(root, f)
+                print(f"  Removing hidden file: {full_path}")
+                try:
+                    os.remove(full_path)
+                except:
+                    pass
 
     updated_count = 0
     for root, dirs, files in os.walk(vendor_dir):
@@ -31,20 +42,17 @@ def clean_checksums(vendor_dir):
                     original_files = data["files"]
                     
                     # Remove keys that:
-                    # 1. Start with .git (like .gitignore)
-                    # 2. Don't exist on disk (were stripped or excluded by R CMD build)
+                    # 1. Were hidden files (handled above)
+                    # 2. Don't exist on disk (were inside stripped dirs)
                     new_files = {}
                     for k, v in original_files.items():
-                        is_hidden = any(part.startswith(".git") for part in k.split("/"))
+                        # Normalized path for checking existence
                         exists = os.path.exists(os.path.join(root, k))
+                        is_hidden = any(part.startswith(".") for part in k.split("/"))
                         
-                        if not is_hidden and exists:
+                        if exists and not is_hidden:
                             new_files[k] = v
-                        elif not exists:
-                            # Silently remove missing files from checksum to satisfy cargo
-                            pass
-                        else:
-                            print(f"  Removing checksum entry for: {k}")
+                        # If it doesn't exist or is hidden, it is excluded from checksum
                     
                     if len(original_files) != len(new_files):
                         print(f"  Updated {filepath}: removed {len(original_files) - len(new_files)} entries")

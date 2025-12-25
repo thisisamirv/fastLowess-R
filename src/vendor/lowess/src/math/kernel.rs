@@ -2,72 +2,31 @@
 //!
 //! ## Purpose
 //!
-//! This module provides kernel functions that define how distance-based
-//! weights are computed in local regression. The kernel controls how
-//! neighboring points influence the fit at each target point, with closer
-//! points typically receiving higher weights.
+//! This module provides kernel functions that define distances-based weights for
+//! local regression. It controls the influence of neighboring points on the fit.
 //!
 //! ## Design notes
 //!
-//! * All kernels map normalized distances u = |x - x_i| / bandwidth to weights.
-//! * Bounded kernels have compact support on [-1, 1] for computational efficiency.
-//! * The Gaussian kernel has unbounded support but uses a cutoff for numerical stability.
-//! * Kernel properties (variance, roughness, efficiency) are precomputed for performance.
-//! * The tricube kernel is the default, following Cleveland's original LOWESS.
-//! * All weight computations are generic over `Float` types (f32/f64).
-//!
-//! ## Available kernels
-//!
-//! * **Tricube** (default): Smooth, efficient, recommended for most use cases
-//! * **Epanechnikov**: Theoretically optimal (AMISE-minimal)
-//! * **Gaussian**: Infinitely smooth, unbounded support
-//! * **Biweight**: Good balance between smoothness and efficiency
-//! * **Cosine**: Smooth with compact support
-//! * **Triangle**: Simple linear taper
-//! * **Uniform**: Equal weights (simplest, least smooth)
+//! * **Normalization**: Maps distances u = |x - x_i| / bandwidth to weights.
+//! * **Efficiency**: Uses precomputed properties (variance, roughness) for performance.
+//! * **Support**: Most kernels are bounded on [-1, 1] for efficiency.
 //!
 //! ## Key concepts
 //!
-//! ### Normalized Distance
-//!
-//! Distances are normalized by the local bandwidth (h): u = |x - x_i| / h.
-//! This makes kernels scale-invariant and allows for consistent adaptation
-//! across varying data densities.
-//!
-//! ### Kernel Properties
-//!
-//! Each kernel has mathematical properties that influence the bias-variance
-//! trade-off of the smoother:
-//! * **Integrator** (c_K): Normalization constant, integral K(u) du.
-//! * **Variance** (mu_2): Second moment, integral u^2 K(u) du. Affects approximation bias.
-//! * **Roughness** (R): Index of smoothness, integral K(u)^2 du. Affects variance.
-//!
-//! ### Support
-//!
-//! Bounded kernels have compact support on [-1, 1], meaning K(u) = 0 for |u| >= 1.
-//! The Gaussian kernel has infinite support but is truncated at u = 6 for performance.
+//! * **Tricube**: The default kernel (Cleveland's original), smooth and efficient.
+//! * **Bias-Variance properties**: Each kernel has associated moments (mu_2) and roughness (R).
 //!
 //! ## Invariants
 //!
 //! * Kernels are non-negative (K(u) >= 0) and symmetric (K(u) = K(-u)).
 //! * Bounded kernels return exactly zero outside their support.
-//! * Kernel properties are precomputed constants for high performance.
 //!
 //! ## Non-goals
 //!
 //! * This module does not perform weight normalization.
 //! * This module does not handle bandwidth selection logic.
-//! * This module does not provide kernels with negative components (e.g., higher-order kernels).
-//!
-//! ## Visibility
-//!
-//! The [`WeightFunction`] enum is part of the public API. Users can select
-//! different kernels to control smoothing behavior. The internal kernel
-//! properties and computation details are implementation details.
 
-#[cfg(not(feature = "std"))]
-extern crate alloc;
-
+// External dependencies
 use core::f64::consts::{PI, SQRT_2};
 use num_traits::Float;
 
@@ -378,7 +337,7 @@ impl WeightFunction {
         let n = x.len();
 
         // Safety guard for empty input or invalid window
-        if n == 0 || left >= n || right >= n || left > right {
+        if left >= n || right >= n || left > right {
             return (T::zero(), left);
         }
 
@@ -401,8 +360,8 @@ impl WeightFunction {
         }
 
         // Zero the skipped region [left..start)
-        for w in weights.iter_mut().take(start).skip(left) {
-            *w = T::zero();
+        if start > left {
+            weights[left..start].fill(T::zero());
         }
 
         // Compute weights from start onwards
@@ -411,11 +370,9 @@ impl WeightFunction {
             let distance = (xj - x_current).abs();
 
             if distance > h9 {
-                if xj >= x_current {
+                if xj > x_current {
                     // Beyond h9 on right side (x is sorted): zero remaining in window and break
-                    for w in weights.iter_mut().take(right + 1).skip(j) {
-                        *w = T::zero();
-                    }
+                    weights[j..=right].fill(T::zero());
                     break;
                 }
                 // Beyond h9 on left side (defensive)
@@ -427,8 +384,7 @@ impl WeightFunction {
             let w_k = if distance <= h1 {
                 T::one()
             } else {
-                let u = distance / bandwidth;
-                self.compute_weight(u)
+                self.compute_weight(distance / bandwidth)
             };
 
             weights[j] = w_k;

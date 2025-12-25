@@ -5,113 +5,60 @@
 //! This module provides the streaming execution adapter for LOWESS smoothing
 //! on datasets too large to fit in memory. It divides the data into overlapping
 //! chunks, processes each chunk independently, and merges the results while
-//! handling boundary effects. This enables LOWESS smoothing on arbitrarily
-//! large datasets with controlled memory usage.
+//! handling boundary effects.
 //!
 //! ## Design notes
 //!
-//! * Processes data in fixed-size chunks with configurable overlap.
-//! * Automatically sorts data within each chunk.
-//! * Merges overlapping regions using configurable strategies.
-//! * Handles boundary effects at chunk edges.
-//! * Supports smoothing, residuals, robustness weights, and diagnostics.
-//! * Generic over `Float` types to support f32 and f64.
-//! * Stateful: maintains overlap buffer between chunks.
+//! * **Strategy**: Processes data in fixed-size chunks with configurable overlap.
+//! * **Merging**: Merges overlapping regions using configurable strategies (Average, Weighted).
+//! * **Sorting**: Automatically sorts data within each chunk.
+//! * **Generics**: Generic over `Float` types.
 //!
 //! ## Key concepts
 //!
-//! ### Chunked Processing
-//! The streaming adapter divides data into overlapping chunks:
-//! ```text
-//! Chunk 1: [==========]
-//! Chunk 2:       [==========]
-//! Chunk 3:             [==========]
-//!          ↑overlap↑
-//! ```
-//!
-//! ### Overlap Strategy
-//! Overlap ensures smooth transitions between chunks:
-//! * **Rule of thumb**: overlap = 2 × window_size
-//! * Larger overlap = better boundary handling, more computation
-//! * Smaller overlap = faster processing, potential edge artifacts
-//!
-//! ### Merge Strategies
-//! When chunks overlap, values are merged using:
-//! * **Average**: Simple average of overlapping values
-//! * **Weighted**: Distance-weighted average
-//! * **KeepFirst**: Use value from first chunk
-//! * **KeepLast**: Use value from last chunk
-//!
-//! ### Boundary Policies
-//! At dataset boundaries:
-//! * **Extend**: Extend the first/last values to fill neighborhoods
-//! * **Reflect**: Reflect values around the boundary
-//! * **Zero**: Use zero padding at boundaries
-//!
-//! ### Processing Flow
-//! For each chunk:
-//! 1. Validate chunk data
-//! 2. Sort chunk by x-values
-//! 3. Perform LOWESS smoothing
-//! 4. Extract non-overlapping portion
-//! 5. Merge overlap with previous chunk
-//! 6. Buffer overlap for next chunk
-//!
-//! ## Supported features
-//!
-//! * **Robustness iterations**: Downweight outliers iteratively
-//! * **Residuals**: Differences between original and smoothed values
-//! * **Robustness weights**: Return weights used for each point
-//! * **Diagnostics**: RMSE, MAE, R^2, Residual SD (cumulative)
-//! * **Delta optimization**: Point skipping for dense data
-//! * **Configurable chunking**: Chunk size and overlap
-//! * **Merge strategies**: Multiple overlap merging options
+//! * **Chunked Processing**: Divides stream into `chunk_size` pieces.
+//! * **Overlap**: Ensures smooth transitions, typically 2x window size.
+//! * **Merging**: Handles value conflicts in overlapping regions.
+//! * **Boundary Policies**: Handles edge effects at stream start/end.
 //!
 //! ## Invariants
 //!
 //! * Chunk size must be larger than overlap.
-//! * Overlap must be large enough for local smoothing.
-//! * All values must be finite (no NaN or infinity).
-//! * At least 2 points required per chunk.
-//! * Output order matches input order within each chunk.
+//! * Overlap must be sufficient for local smoothing window.
+//! * values must be finite.
+//! * At least 2 points per chunk.
 //!
 //! ## Non-goals
 //!
 //! * This adapter does not support confidence/prediction intervals.
 //! * This adapter does not support cross-validation.
-//! * This adapter does not handle batch processing (use batch adapter).
-//! * This adapter does not handle incremental updates (use online adapter).
+//! * This adapter does not handle batch processing.
+//! * This adapter does not handle incremental updates.
 //! * This adapter requires chunks to be provided in stream order.
-//!
-//! ## Visibility
-//!
-//! The streaming adapter is part of the public API through the high-level
-//! `Lowess` builder. Direct usage of `StreamingLowess` is possible but not
-//! the primary interface.
 
-#[cfg(not(feature = "std"))]
-extern crate alloc;
-
+// Feature-gated imports
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
-
 #[cfg(feature = "std")]
 use std::vec::Vec;
 
+// External dependencies
+use core::fmt::Debug;
+use num_traits::Float;
+
+// Internal dependencies
 use crate::algorithms::regression::ZeroWeightFallback;
 use crate::algorithms::robustness::RobustnessMethod;
-use crate::engine::executor::{LowessConfig, LowessExecutor, SmoothPassFn};
+use crate::engine::executor::{CVPassFn, FitPassFn, IntervalPassFn, SmoothPassFn};
+use crate::engine::executor::{LowessConfig, LowessExecutor};
 use crate::engine::output::LowessResult;
 use crate::engine::validator::Validator;
 use crate::evaluation::diagnostics::DiagnosticsState;
 use crate::math::kernel::WeightFunction;
+use crate::primitives::backend::Backend;
 use crate::primitives::errors::LowessError;
 use crate::primitives::partition::{BoundaryPolicy, MergeStrategy};
 use crate::primitives::sorting::sort_by_x;
-
-use core::fmt::Debug;
-use core::result::Result;
-use num_traits::Float;
 
 // ============================================================================
 // Streaming LOWESS Builder
@@ -165,10 +112,35 @@ pub struct StreamingLowessBuilder<T: Float> {
     /// Deferred error from adapter conversion
     pub deferred_error: Option<LowessError>,
 
-    /// Optional custom smoothing function (e.g., for parallel execution)
+    // ++++++++++++++++++++++++++++++++++++++
+    // +               DEV                  +
+    // ++++++++++++++++++++++++++++++++++++++
+    /// Custom smooth pass function.
+    #[doc(hidden)]
     pub custom_smooth_pass: Option<SmoothPassFn<T>>,
 
+    /// Custom cross-validation pass function.
+    #[doc(hidden)]
+    pub custom_cv_pass: Option<CVPassFn<T>>,
+
+    /// Custom interval estimation pass function.
+    #[doc(hidden)]
+    pub custom_interval_pass: Option<IntervalPassFn<T>>,
+
+    /// Custom fit pass function.
+    #[doc(hidden)]
+    pub custom_fit_pass: Option<FitPassFn<T>>,
+
+    /// Execution backend hint.
+    #[doc(hidden)]
+    pub backend: Option<Backend>,
+
+    /// Parallel execution hint.
+    #[doc(hidden)]
+    pub parallel: Option<bool>,
+
     /// Tracks if any parameter was set multiple times (for validation)
+    #[doc(hidden)]
     pub(crate) duplicate_param: Option<&'static str>,
 }
 
@@ -198,6 +170,11 @@ impl<T: Float> StreamingLowessBuilder<T> {
             auto_convergence: None,
             deferred_error: None,
             custom_smooth_pass: None,
+            custom_cv_pass: None,
+            custom_interval_pass: None,
+            custom_fit_pass: None,
+            backend: None,
+            parallel: None,
             duplicate_param: None,
         }
     }
@@ -294,6 +271,45 @@ impl<T: Float> StreamingLowessBuilder<T> {
         self
     }
 
+    // ++++++++++++++++++++++++++++++++++++++
+    // +               DEV                  +
+    // ++++++++++++++++++++++++++++++++++++++
+
+    /// Set a custom smooth pass function.
+    #[doc(hidden)]
+    pub fn custom_smooth_pass(mut self, pass: SmoothPassFn<T>) -> Self {
+        self.custom_smooth_pass = Some(pass);
+        self
+    }
+
+    /// Set a custom cross-validation pass function.
+    #[doc(hidden)]
+    pub fn custom_cv_pass(mut self, pass: CVPassFn<T>) -> Self {
+        self.custom_cv_pass = Some(pass);
+        self
+    }
+
+    /// Set a custom interval estimation pass function.
+    #[doc(hidden)]
+    pub fn custom_interval_pass(mut self, pass: IntervalPassFn<T>) -> Self {
+        self.custom_interval_pass = Some(pass);
+        self
+    }
+
+    /// Set the execution backend hint.
+    #[doc(hidden)]
+    pub fn backend(mut self, backend: Backend) -> Self {
+        self.backend = Some(backend);
+        self
+    }
+
+    /// Set parallel execution hint.
+    #[doc(hidden)]
+    pub fn parallel(mut self, parallel: bool) -> Self {
+        self.parallel = Some(parallel);
+        self
+    }
+
     // ========================================================================
     // Build Method
     // ========================================================================
@@ -365,7 +381,8 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
         // Combine with overlap from previous chunk
         let prev_overlap_len = self.overlap_buffer_smoothed.len();
         let (combined_x, combined_y) = if self.overlap_buffer_x.is_empty() {
-            (sorted.x.clone(), sorted.y.clone())
+            // No overlap: move sorted data directly (no clone needed)
+            (sorted.x, sorted.y)
         } else {
             let mut cx = core::mem::take(&mut self.overlap_buffer_x);
             cx.extend_from_slice(&sorted.x);
@@ -385,10 +402,19 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
             robustness_method: self.config.robustness_method,
             boundary_policy: self.config.boundary_policy,
             cv_fractions: None,
-            cv_method: None,
+            cv_kind: None,
             auto_convergence: self.config.auto_convergence,
             return_variance: None,
+            cv_seed: None,
+            // ++++++++++++++++++++++++++++++++++++++
+            // +               DEV                  +
+            // ++++++++++++++++++++++++++++++++++++++
             custom_smooth_pass: self.config.custom_smooth_pass,
+            custom_cv_pass: self.config.custom_cv_pass,
+            custom_interval_pass: self.config.custom_interval_pass,
+            custom_fit_pass: self.config.custom_fit_pass,
+            parallel: self.config.parallel.unwrap_or(false),
+            backend: self.config.backend,
         };
         // Execute LOWESS on combined data
         let result = LowessExecutor::run_with_config(&combined_x, &combined_y, config);
@@ -593,9 +619,6 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
     }
 
     /// Reset the processor state.
-    ///
-    /// Clears all buffered overlap data. Useful when starting a new stream
-    /// or handling gaps in the data.
     pub fn reset(&mut self) {
         self.overlap_buffer_x.clear();
         self.overlap_buffer_y.clear();

@@ -12,7 +12,7 @@
 //! * **No-std**: Supports `no_std` environments by using `alloc` for dynamic messages.
 //! * **Trait Implementation**: Implements `Display` and `std::error::Error` (when `std` is enabled).
 //!
-//! ## Error categories
+//! ## Key concepts
 //!
 //! 1. **Input validation**: Empty arrays, mismatched lengths, non-finite values.
 //! 2. **Parameter validation**: Invalid fraction, delta, iterations, or interval levels.
@@ -29,19 +29,16 @@
 //!
 //! * This module does not perform the validation logic itself.
 //! * This module does not provide error recovery or fallback strategies.
-//!
-//! ## Visibility
-//!
-//! [`LowessError`] is part of the public API and is re-exported at the crate root.
 
-#[cfg(not(feature = "std"))]
-extern crate alloc;
+// Feature-gated imports
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
-
 #[cfg(feature = "std")]
 use std::error::Error;
+#[cfg(feature = "std")]
+use std::string::String;
 
+// External dependencies
 use core::fmt::{Display, Formatter, Result};
 
 // ============================================================================

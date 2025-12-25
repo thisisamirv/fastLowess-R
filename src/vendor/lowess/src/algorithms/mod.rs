@@ -1,6 +1,6 @@
 //! Layer 3: Algorithms
 //!
-//! Core LOWESS algorithms.
+//! # Purpose
 //!
 //! This layer implements the core logic for local weighted regression, robustness
 //! iterations, and interpolation. It contains the "business logic" of LOWESS
@@ -13,37 +13,22 @@
 //!   ↓
 //! Layer 6: Adapters
 //!   ↓
-//! Layer 5: Engine (executor, output, validator)
+//! Layer 5: Engine
 //!   ↓
-//! Layer 4: Evaluation (cv, diagnostics, intervals)
+//! Layer 4: Evaluation
 //!   ↓
 //! Layer 3: Algorithms ← You are here
 //!   ↓
-//! Layer 2: Math (kernel, mad)
+//! Layer 2: Math
 //!   ↓
-//! Layer 1: Primitives (errors, traits, window)
+//! Layer 1: Primitives
 //! ```
 
 /// Local weighted regression implementations.
-///
-/// Provides:
-/// - Linear and polynomial regression
-/// - Weighted least squares (WLS) optimization
-/// - Point-wise neighborhood fitting
 pub mod regression;
 
 /// Robustness weight updates for outlier downweighting.
-///
-/// Provides:
-/// - Bisquare function implementation
-/// - Iterative Reweighted Least Squares (IRLS) logic
-/// - Outlier detection and weight adjustment
 pub mod robustness;
 
 /// Interpolation and delta optimization utilities.
-///
-/// Provides:
-/// - Delta-based optimization for speed
-/// - Linear interpolation between anchor points
-/// - Skipped computation for dense regions
 pub mod interpolation;

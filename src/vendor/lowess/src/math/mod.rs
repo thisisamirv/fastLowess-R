@@ -1,6 +1,6 @@
 //! Layer 2: Math
 //!
-//! Pure mathematical functions.
+//! # Purpose
 //!
 //! This layer provides pure mathematical functions used throughout LOWESS:
 //! - Kernel functions for distance-based weighting
@@ -15,36 +15,22 @@
 //!   ↓
 //! Layer 6: Adapters
 //!   ↓
-//! Layer 5: Engine (executor, output, validator)
+//! Layer 5: Engine
 //!   ↓
-//! Layer 4: Evaluation (cv, diagnostics, intervals)
+//! Layer 4: Evaluation
 //!   ↓
-//! Layer 3: Algorithms (regression, robustness, interpolation)
+//! Layer 3: Algorithms
 //!   ↓
 //! Layer 2: Math ← You are here
 //!   ↓
-//! Layer 1: Primitives (errors, traits, window)
+//! Layer 1: Primitives
 //! ```
 
 /// Kernel (weight) functions for distance-based weighting.
-///
-/// Provides:
-/// - Standard weight functions (Tricube, Gaussian, Uniform, etc.)
-/// - Distance normalization and scaling
-/// - Weight calculation logic
 pub mod kernel;
 
 /// Median Absolute Deviation (MAD) computation.
-///
-/// Provides:
-/// - Robust variance estimation
-/// - Median calculation utilities
-/// - Scale factor adjustment for normal consistency
 pub mod mad;
 
 /// Boundary padding utilities.
-///
-/// Provides:
-/// - Padding strategies (Extend, Reflect, Zero)
-/// - Coordination for reduce edge bias
 pub mod boundary;

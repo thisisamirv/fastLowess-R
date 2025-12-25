@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0]
+
+### Added
+
+- Added `cv_seed` field to `CVConfig` for reproducible K-Fold cross-validation results.
+- K-Fold CV now shuffles data indices when a seed is provided in `CVConfig`.
+- Added `Backend` enum (`CPU`, `GPU`) in new `primitives/backend.rs` module as a placeholder for GPU acceleration support in downstream crates.
+- Added `FitPassFn` type alias for GPU-optimized fit processing in downstream crates.
+- Added development-only fields to `LowessConfig`, `LowessExecutor`, and all adapter builders: `custom_fit_pass`, `custom_cv_pass`, `custom_interval_pass`, `backend`, and `parallel`. These are marked `#[doc(hidden)]` and intended for extension crates like `fastLowess`.
+- Added `from_config` and `to_config` methods to `LowessExecutor` for simplified configuration management.
+
+### Changed
+
+- Refactored `cross_validate` API to use `CVConfig` struct with constructor methods: `KFold(k, fractions)` and `LOOCV(fractions)`.
+- Refactored `Window::recenter` to be bidirectional, allowing the window to slide both left and right.
+- Replaced manual `extern crate alloc` declarations with `no_std`-compliant imports where appropriate.
+- Internal: Replaced `CVMethod` configuration logic with `CVKind`.
+- Updated `prelude` to export enum variants directly (e.g., `Batch`, `Tricube`, `Bisquare`) instead of the enum types themselves, simplifying API usage.
+- Reorganized `src/engine/executor.rs` into a unified logical flow, moving from high-level entry points to low-level mathematical primitives.
+- Standardized the visual separation of internal development features using prominent comment header blocks (e.g., `// DEV`) across all builders and executors.
+- Hidden internal-only and development-focused fields and methods from public documentation using `#[doc(hidden)]` to maintain a clean public API surface.
+- Consolidated standard error calculation logic into a unified `compute_std_errors` helper, supporting both internal math and custom external hooks.
+- Updated all adapter conversion logic, setter methods, and core test suite to align with the new development field structure.
+- Standardized internal documentation and code interaction patterns for better readability and maintainability.
+- Updated `Makefile` to automatically evaluate `std`, `no-std`, and `dev` features, and added example execution targets.
+- Updated `CONTRIBUTING.md` to reflect the new Makefile structure and development workflow.
+
+### Fixed
+
+- Fixed various broken documentation links in `engine/mod.rs`, `engine/executor.rs`, `engine/validator.rs`, and `engine/output.rs`.
+- Fixed `WeightParams` struct and tests to remove unused `use_robustness` field, resolving a clippy warning.
+- Fixed a bug in `Batch` and `Streaming` adapter conversion logic where `return_diagnostics` and `compute_residuals` fields were not being correctly propagated from the generic builder.
+
+### Removed
+
+- Removed unused `GLSModel::local_wls` method from `regression.rs`.
+- Removed `CVMethod` and `CrossValidationStrategy` enums in favor of unified `CVConfig` struct.
+- Removed `Adapter`, `BoundaryPolicy`, `CrossValidationStrategy`, `MergeStrategy`, `RobustnessMethod`, `UpdateMode`, `WeightFunction`, and `ZeroWeightFallback` type exports from `prelude`.
+- Removed the `type Result<T>` alias (previously in `api.rs` and exported via prelude) which shadowed `std::result::Result`. This alias caused ambiguity by implicitly binding `LowessError`. We now strictly follow Rust idioms: explicit `Result<LowessResult<T>, LowessError>` return types using the standard library `Result`.
+- Removed `.cargo/config.toml` to simplify build configuration.
+
+## [0.5.3]
+
+### Changed
+
+- Consolidated validation logic into `src/engine/validator.rs`.
+- Removed redundant configuration defaults in `api.rs`.
+- Optimized `src/primitives/sorting.rs` with fast path for sorted data and improved memory layout.
+- Inlined hot methods in `src/primitives/window.rs`.
+- Optimized `src/math/mad.rs` by promoting inplace computation to the primary `compute_mad` API, making buffer mutation explicit and reducing allocations library-wide.
+- Refactored `src/algorithms/robustness.rs` to use a provided scratch buffer, making robustness weight updates entirely allocation-free.
+- Optimized `src/algorithms/regression.rs` with fused `local_wls_with_sum` loops that leverage pre-calculated weight sums, eliminating redundant computations and nested loops.
+- Improved `src/math/kernel.rs` with vectorized `slice::fill` operations and early termination for out-of-window calculations on sorted data.
+- Updated `src/evaluation/diagnostics.rs` and `src/evaluation/intervals.rs` to leverage the new allocation-aware math patterns.
+- Optimized `src/algorithms/interpolation.rs` with vectorized `slice::fill` for tied values and precomputed slopes to reduce divisions in interpolation loops.
+- Refactored `src/evaluation/cv.rs` to use scratch buffers for training data in cross-validation, eliminating allocations in k-fold CV and LOOCV.
+- Added batched linear interpolation with linear scanning in `cv.rs` for sorted test sets, replacing repeated binary searches in k-fold CV.
+- Added pre-allocated scratch buffers to `src/adapters/online.rs` to eliminate per-call allocations in `add_point()`.
+- Optimized `src/adapters/streaming.rs` to move sorted data instead of cloning when no overlap buffer exists.
+- Simplified residual calculation in `src/adapters/batch.rs` with idiomatic zip iterator.
+- Optimized delta interpolation in `src/engine/executor.rs` by replacing O(n) linear scan with O(log n) binary search using `partition_point` for anchor point discovery, providing significant speedup on dense data with large delta values.
+
 ## [0.5.2]
 
 ### Changed

@@ -68,35 +68,35 @@ The factor 1.4826 = 1/Phi^-1(3/4) ensures consistency with the standard deviatio
 
 ## Performance Advantages
 
-Benchmarked against Python's `statsmodels`. Achieves **50-1400× faster performance** across different tested scenarios.
+Benchmarked against Python's `statsmodels`. Achieves **113-2813× faster performance** across all tested scenarios, with no regressions. Performance gains scale dramatically with dataset size.
 
 ### Summary
 
 | Category         | Matched | Median Speedup | Mean Speedup |
 |------------------|---------|----------------|--------------|
-| **Scalability**  | 5       | **236×**       | 528×         |
-| **Financial**    | 4       | **128×**       | 144×         |
-| **Iterations**   | 6       | **104×**       | 106×         |
-| **Pathological** | 4       | **107×**       | 97×          |
-| **Scientific**   | 4       | **97×**        | 108×         |
-| **Fraction**     | 6       | **92×**        | 119×         |
-| **Genomic**      | 4       | **3.4×**       | 5×           |
-| **Delta**        | 4       | **2×**         | 2.1×         |
+| **Scalability**  | 5       | **481×**       | 1057×        |
+| **Financial**    | 4       | **270×**       | 301×         |
+| **Iterations**   | 6       | **238×**       | 248×         |
+| **Pathological** | 4       | **234×**       | 220×         |
+| **Scientific**   | 4       | **212×**       | 239×         |
+| **Fraction**     | 6       | **218×**       | 268×         |
+| **Genomic**      | 4       | **6.9×**       | 10.4×        |
+| **Delta**        | 4       | **5.0×**       | 5.0×         |
 
 ### Top 10 Performance Wins
 
 | Benchmark        | statsmodels | Rust   | Speedup   |
 |------------------|-------------|--------|-----------|
-| scale_100000     | 43.7s       | 31.0ms | **1409×** |
-| scale_50000      | 11.2s       | 15.2ms | **734×**  |
-| fraction_0.05    | 197.2ms     | 0.76ms | **258×**  |
-| financial_10000  | 497.1ms     | 2.10ms | **237×**  |
-| scale_10000      | 663.1ms     | 2.81ms | **236×**  |
-| scientific_10000 | 777.2ms     | 4.24ms | **183×**  |
-| fraction_0.1     | 227.9ms     | 1.40ms | **163×**  |
-| scale_5000       | 229.9ms     | 1.42ms | **162×**  |
-| financial_5000   | 170.9ms     | 1.05ms | **162×**  |
-| scientific_5000  | 268.5ms     | 2.13ms | **126×**  |
+| scale_100000     | 43.7s       | 15.5ms | **2813×** |
+| scale_50000      | 11.2s       | 7.6ms  | **1466×** |
+| fraction_0.05    | 197.2ms     | 0.38ms | **516×**  |
+| financial_10000  | 497.1ms     | 0.97ms | **512×**  |
+| scale_10000      | 663.1ms     | 1.38ms | **481×**  |
+| scientific_10000 | 777.2ms     | 1.86ms | **418×**  |
+| financial_5000   | 170.9ms     | 0.49ms | **346×**  |
+| fraction_0.1     | 227.9ms     | 0.67ms | **339×**  |
+| scale_5000       | 229.9ms     | 0.69ms | **334×**  |
+| iterations_0     | 74.2ms      | 0.26ms | **289×**  |
 
 Check [Benchmarks](https://github.com/thisisamirv/lowess/tree/bench/benchmarks) for detailed results and reproducible benchmarking code.
 
@@ -106,14 +106,14 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-lowess = "0.5"
+lowess = "0.6"
 ```
 
 For `no_std` environments:
 
 ```toml
 [dependencies]
-lowess = { version = "0.5", default-features = false }
+lowess = { version = "0.6", default-features = false }
 ```
 
 ## Quick Start
@@ -153,16 +153,16 @@ Lowess::new()
     .delta(0.01)
 
     // Kernel selection
-    .weight_function(WeightFunction::Tricube)
+    .weight_function(Tricube)
 
     // Robustness method
-    .robustness_method(RobustnessMethod::Bisquare)
+    .robustness_method(Bisquare)
 
     // Zero-weight fallback behavior
-    .zero_weight_fallback(ZeroWeightFallback::UseLocalMean)
+    .zero_weight_fallback(UseLocalMean)
 
     // Boundary handling (for edge effects)
-    .boundary_policy(BoundaryPolicy::Extend)
+    .boundary_policy(Extend)
 
     // Confidence intervals
     .confidence_intervals(0.95)
@@ -176,11 +176,10 @@ Lowess::new()
     .return_robustness_weights()
 
     // Cross-validation (for parameter selection)
-    .cross_validate(&[0.3, 0.5, 0.7], CrossValidationStrategy::KFold, Some(5))
+    .cross_validate(KFold(5, &[0.3, 0.5, 0.7]).seed(123))
 
     // Convergence
     .auto_converge(1e-4)
-    .max_iterations(20)
 
     // Execution mode
     .adapter(Batch)
@@ -281,6 +280,11 @@ for (x, y) in data_stream {
 - **0.7-1.0**: Global, smooth trends only
 - **Default: 0.67** (2/3, Cleveland's choice)
 - **Use CV** when uncertain
+
+### Robustness Method
+
+- **Bisquare** (default): Best all-around, smooth, efficient
+- **Huber**: Theoretically optimal MSE
 
 ### Robustness Iterations
 

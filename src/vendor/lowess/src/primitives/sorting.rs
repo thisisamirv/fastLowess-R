@@ -28,18 +28,12 @@
 //!
 //! * This module does not perform data validation or LOWESS calculation.
 //!
-//! ## Visibility
-//!
-//! [`SortedData`] is internal to the engine but public for adapter access.
 
-#[cfg(not(feature = "std"))]
-extern crate alloc;
-
-#[cfg(not(feature = "std"))]
-use alloc::vec;
+// Feature-gated imports
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+// External dependencies
 use core::cmp::Ordering;
 use num_traits::Float;
 
@@ -59,63 +53,49 @@ pub struct SortedData<T> {
     pub indices: Vec<usize>,
 }
 
-impl<T> SortedData<T> {
-    /// Returns the number of points in the sorted data.
-    pub fn len(&self) -> usize {
-        self.x.len()
-    }
-
-    /// Returns `true` if the sorted data contains no points.
-    pub fn is_empty(&self) -> bool {
-        self.x.is_empty()
-    }
-}
-
 // ============================================================================
 // Sorting Functions
 // ============================================================================
 
 /// Sort input data by x-coordinates in ascending order.
 ///
-/// 1. Pairs (x, y) with their original indices.
-/// 2. Performs a stable sort:
-///    - Finite values are ordered ascending.
-///    - Non-finite values (NaN, Inf) are moved to the end.
-/// 3. Extracts sorted arrays and permutation mapping.
+/// 1. Checks if data is already sorted (fast path).
+/// 2. Pairs x with original indices.
+///    - We only sort x and index to keep the tuple size small (16 bytes for f64 vs 24 bytes)
+///    - This reduces data movement during sorting.
+/// 3. Performs a stable sort.
+/// 4. Extracts sorted arrays and permutation mapping.
+#[inline]
 pub fn sort_by_x<T: Float>(x: &[T], y: &[T]) -> SortedData<T> {
-    // Create tuples of (x_value, y_value, original_index)
-    let mut pairs: Vec<(T, T, usize)> = x
-        .iter()
-        .zip(y.iter())
-        .enumerate()
-        .map(|(i, (&xi, &yi))| (xi, yi, i))
-        .collect();
+    let n = x.len();
+
+    // Fast path: check if data is already sorted by x
+    let is_sorted = x.windows(2).all(|w| w[0] <= w[1]);
+    if is_sorted {
+        return SortedData {
+            x: x.to_vec(),
+            y: y.to_vec(),
+            indices: (0..n).collect(),
+        };
+    }
+
+    // Create tuples of (x_value, original_index)
+    // We only sort x and index to keep the tuple size small (16 bytes for f64 vs 24 bytes)
+    let mut pairs: Vec<(T, usize)> = x.iter().enumerate().map(|(i, &xi)| (xi, i)).collect();
 
     // Stable sort to preserve order of equal x values for determinism
-    pairs.sort_by(|a, b| {
-        match (a.0.is_finite(), b.0.is_finite()) {
-            (true, true) => {
-                // Both finite: normal comparison
-                a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal)
-            }
-            (true, false) => Ordering::Less, // Finite values come first
-            (false, true) => Ordering::Greater, // Non-finite values at end
-            (false, false) => {
-                // Both non-finite: preserve original order
-                a.2.cmp(&b.2)
-            }
-        }
-    });
+    pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
 
     // Extract sorted components
     SortedData {
         x: pairs.iter().map(|p| p.0).collect(),
-        y: pairs.iter().map(|p| p.1).collect(),
-        indices: pairs.iter().map(|p| p.2).collect(),
+        y: pairs.iter().map(|p| y[p.1]).collect(),
+        indices: pairs.iter().map(|p| p.1).collect(),
     }
 }
 
 /// Map sorted results back to the original input order in O(n) time.
+#[inline]
 pub fn unsort<T: Float>(sorted_values: &[T], indices: &[usize]) -> Vec<T> {
     let n = indices.len();
     let mut result = vec![T::zero(); n];

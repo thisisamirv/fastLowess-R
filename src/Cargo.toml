@@ -1,6 +1,6 @@
 [package]
 name = "fastLowess-R"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85.0"
 
@@ -20,9 +20,9 @@ categories = ["science", "algorithms"]
 
 include = ["Cargo.toml", "lib.rs", "vendor/**/*", "README.md", "LICENSE"]
 
-# Build
+# Build - use crates.io versions temporarily for vendoring
 [dependencies]
-fastLowess = { path = "vendor/fastLowess", version = "0.2.1", features = ["dev"] }
+fastLowess = { path = "vendor/fastLowess", version = "0.3", features = ["dev"] }
 extendr-api = "0.8"
 
 [lib]
@@ -43,6 +43,7 @@ codegen-units = 1
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
 
 
 [patch.crates-io]

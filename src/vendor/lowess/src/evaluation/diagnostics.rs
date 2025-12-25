@@ -4,74 +4,40 @@
 //!
 //! This module provides comprehensive diagnostic tools for evaluating the
 //! quality of LOWESS smoothing results. It computes goodness-of-fit metrics,
-//! model selection criteria, and coverage statistics to help assess and
-//! compare different smoothing configurations.
+//! model selection criteria, and coverage statistics.
 //!
 //! ## Design notes
 //!
-//! * All metrics are computed from residuals (y - ŷ) and fitted values.
-//! * Uses MAD (Median Absolute Deviation) for robust scale estimation.
-//! * Effective degrees of freedom are estimated from standard errors.
-//! * AIC and AICc provide model selection criteria for bandwidth tuning.
-//! * All computations are generic over `Float` types to support f32 and f64.
-//!
-//! ## Available metrics
-//!
-//! * **Error metrics**: RMSE, MAE, RSS
-//! * **Goodness-of-fit**: R^2 (coefficient of determination)
-//! * **Model selection**: AIC, AICc (corrected AIC)
-//! * **Robustness**: Residual standard deviation (from MAD)
-//! * **Complexity**: Effective degrees of freedom
-//! * **Coverage**: Interval coverage probability
+//! * **Residual-based**: Metrics are computed from residuals (y - ŷ) and fitted values.
+//! * **Robustness**: Uses MAD (Median Absolute Deviation) for robust scale estimation.
+//! * **Model selection**: AIC and AICc provide criteria for bandwidth tuning.
+//! * **Generics**: All computations are generic over `Float` types.
 //!
 //! ## Key concepts
 //!
-//! ### Residual Metrics
-//!
-//! * **RSS**: Residual Sum of Squares, sum (y_i - y_hat_i)^2.
-//! * **RMSE**: Root Mean Squared Error, sqrt(RSS / n).
-//! * **MAE**: Mean Absolute Error, (1/n) * sum |y_i - y_hat_i|.
-//!
-//! ### Goodness-of-Fit (R^2)
-//!
-//! The coefficient of determination, R^2 = 1 - SS_res / SS_tot,
-//! measures the proportion of variance explained by the smoother.
-//!
-//! ### Effective Degrees of Freedom
-//!
-//! Estimated as the trace of the smoother matrix L (y_hat = Ly).
-//! In this module, it is approximated from the relationship between local
-//! standard errors and the global residual standard deviation:
-//! df_eff approx sum (SE_i / sigma)^2.
-//!
-//! ### Model Selection (AIC/AICc)
-//!
-//! Akaike Information Criterion provides a trade-off between fit quality
-//! and complexity:
-//! * AIC = n * ln(RSS / n) + 2 * df_eff
-//! * AICc = AIC + (2 * df_eff * (df_eff + 1)) / (n - df_eff - 1)
+//! * **Residual Metrics**: RSS, RMSE, and MAE measure prediction error.
+//! * **Goodness-of-Fit**: R^2 measures variance explained by the smoother.
+//! * **Effective DF**: Trace of the smoother matrix, approximated from standard errors.
+//! * **Model Selection**: AIC/AICc trade off fit quality and model complexity.
 //!
 //! ## Invariants
 //!
 //! * Error metrics (RMSE, MAE, RSS) and df_eff are non-negative.
-//! * Coverage probabilities are in the range [0, 1].
 //! * R^2 <= 1 (R^2 = 1 is a perfect fit).
+//! * Residual SD is robustly estimated using MAD/1.4826.
 //!
 //! ## Non-goals
 //!
 //! * This module does not perform the smoothing or optimization.
 //! * This module does not provide p-values or formal hypothesis tests.
 //! * This module does not compute weighted diagnostic metrics.
-//!
-//! ## Visibility
-//!
-//! The [`Diagnostics`] struct is part of the public API, allowing users
-//! to assess fit quality. Individual metric functions are also public
-//! for standalone use.
 
-use crate::math::mad::compute_mad;
-use core::fmt;
+// External dependencies
+use core::fmt::{Display, Formatter, Result};
 use num_traits::Float;
+
+// Internal dependencies
+use crate::math::mad::compute_mad;
 
 // ============================================================================
 // Diagnostics Structure
@@ -264,12 +230,7 @@ impl<T: Float> Diagnostics<T> {
     /// Compute the root mean squared error (RMSE).
     /// RMSE = sqrt((1/n) * sum (y_i - y_hat_i)^2).
     pub fn calculate_rmse(y: &[T], y_smooth: &[T]) -> T {
-        let n = y.len();
-        if n == 0 {
-            return T::zero();
-        }
-
-        let n_t = T::from(n).unwrap_or(T::one());
+        let n_t = T::from(y.len()).unwrap_or(T::one());
         let rss = y
             .iter()
             .zip(y_smooth.iter())
@@ -284,12 +245,7 @@ impl<T: Float> Diagnostics<T> {
     /// Compute the mean absolute error (MAE).
     /// MAE = (1/n) * sum |y_i - y_hat_i|.
     pub fn calculate_mae(y: &[T], y_smooth: &[T]) -> T {
-        let n = y.len();
-        if n == 0 {
-            return T::zero();
-        }
-
-        let n_t = T::from(n).unwrap_or(T::one());
+        let n_t = T::from(y.len()).unwrap_or(T::one());
         let sum = y
             .iter()
             .zip(y_smooth.iter())
@@ -307,9 +263,6 @@ impl<T: Float> Diagnostics<T> {
     /// sum of squares and SS_tot is the total sum of squares.
     pub fn calculate_r_squared(y: &[T], y_smooth: &[T]) -> T {
         let n = y.len();
-        if n == 0 {
-            return T::zero();
-        }
         if n == 1 {
             return T::one();
         }
@@ -350,17 +303,14 @@ impl<T: Float> Diagnostics<T> {
     /// sigma_hat = 1.4826 * MAD(residuals).
     pub fn calculate_residual_sd(residuals: &[T]) -> T {
         let n = residuals.len();
-        if n == 0 {
-            return T::zero();
-        }
-
         let scale_const = T::from(Self::MAD_TO_STD_FACTOR).unwrap();
 
         if n == 1 {
             return residuals[0].abs() * scale_const;
         }
 
-        let mad = compute_mad(residuals);
+        let mut vals = residuals.to_vec();
+        let mad = compute_mad(&mut vals);
         if mad > T::zero() {
             mad * scale_const
         } else {
@@ -451,8 +401,8 @@ impl<T: Float> Diagnostics<T> {
 // Display Implementation
 // ============================================================================
 
-impl<T: Float + fmt::Display> fmt::Display for Diagnostics<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<T: Float + Display> Display for Diagnostics<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         writeln!(f, "LOWESS Diagnostics:")?;
         writeln!(f, "  RMSE:         {:.6}", self.rmse)?;
         writeln!(f, "  MAE:          {:.6}", self.mae)?;

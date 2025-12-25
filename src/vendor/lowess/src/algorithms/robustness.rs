@@ -4,86 +4,37 @@
 //!
 //! This module implements iterative reweighted least squares (IRLS) for robust
 //! LOWESS smoothing. After an initial fit, residuals are computed and used to
-//! downweight outliers in subsequent iterations. This makes LOWESS resistant
-//! to outliers and provides more reliable smoothing in the presence of
-//! contaminated data.
+//! downweight outliers in subsequent iterations.
 //!
 //! ## Design notes
 //!
-//! * Uses MAD (Median Absolute Deviation) for robust scale estimation.
-//! * Falls back to MAR (Mean Absolute Residual) when MAD is too small.
-//! * Provides three robustness methods: Bisquare, Huber, and Talwar.
-//! * Bisquare (Tukey's biweight) is the default, following Cleveland (1979).
-//! * All computations are generic over `Float` types to support f32 and f64.
-//! * Tuning constants are method-specific and based on statistical literature.
-//!
-//! ## Available methods
-//!
-//! * **Bisquare** (default): Tukey's bisquare (biweight) function (c=6.0)
-//! * **Huber**: Huber M-estimator weights (c=1.345)
-//! * **Talwar**: Hard threshold - complete rejection beyond threshold (c=2.5)
+//! * **Estimation**: Uses MAD (Median Absolute Deviation) for robust scale estimation.
+//! * **Methods**: Implements Bisquare (default), Huber, and Talwar.
+//! * **Generics**: Generic over `Float` types.
 //!
 //! ## Key concepts
 //!
-//! ### Iterative Reweighted Least Squares (IRLS)
-//! For each robustness iteration:
-//! 1. Compute residuals: r_i = y_i - ŷ_i
-//! 2. Estimate robust scale: s = MAD(r) (or fallback to MAR)
-//! 3. Normalize residuals: u_i = r_i / (c × s)
-//! 4. Apply weight function: w_i = ρ(u_i)
-//! 5. Re-fit using combined weights: kernel × robustness
-//!
-//! ### Bisquare Weights
-//! Tukey's bisquare function provides smooth downweighting:
-//!
-//! w(u) = (1 - u^2)^2  if |u| < 1
-//!
-//! w(u) = 0          if |u| >= 1
-//!
-//! ### Huber Weights
-//! Huber weights provide less aggressive downweighting:
-//!
-//! w(u) = 1      if |u| <= c
-//!
-//! w(u) = c / |u|  if |u| > c
-//!
-//! ### Talwar Weights
-//! Hard threshold - most aggressive rejection:
-//!
-//! w(u) = 1  if |u| <= c
-//!
-//! w(u) = 0  if |u| > c
-//!
-//! ### Robust Scale Estimation
-//! Uses MAD (Median Absolute Deviation) to estimate the scale of residuals.
-//! Falls back to MAR (Mean Absolute Residual) when MAD is too small relative
-//! to MAR, ensuring numerical stability even with highly clustered residuals.
+//! * **IRLS**: Iteratively re-fits the model with updated weights based on residuals.
+//! * **Bisquare**: Smooth downweighting with complete rejection (c=6.0).
+//! * **Huber**: Less aggressive downweighting (c=1.345).
+//! * **Scale Estimation**: Uses MAD/MAR for numerical stability.
 //!
 //! ## Invariants
 //!
 //! * Robustness weights are in [0, 1].
 //! * Scale estimates are always positive.
-//! * Tuning constants are method-specific and positive.
-//! * Weight functions are continuous (except Talwar).
+//! * Tuning constants are positive.
 //!
 //! ## Non-goals
 //!
 //! * This module does not perform the regression itself.
 //! * This module does not compute residuals (done by fitting algorithm).
 //! * This module does not decide the number of robustness iterations.
-//! * This module does not provide adaptive tuning constant selection.
-//!
-//! ## Visibility
-//!
-//! The [`RobustnessMethod`] enum is part of the public API, allowing users
-//! to select the robustness method. Internal implementation details may
-//! change without notice.
 
-#[cfg(not(feature = "std"))]
-use num_traits::Float;
-#[cfg(feature = "std")]
+// External dependencies
 use num_traits::Float;
 
+// Internal dependencies
 use crate::math::mad::compute_mad;
 
 // ============================================================================
@@ -151,12 +102,17 @@ impl RobustnessMethod {
     // ========================================================================
 
     /// Apply robustness weights using the configured method.
-    pub fn apply_robustness_weights<T: Float>(&self, residuals: &[T], weights: &mut [T]) {
+    pub fn apply_robustness_weights<T: Float>(
+        &self,
+        residuals: &[T],
+        weights: &mut [T],
+        scratch: &mut [T],
+    ) {
         if residuals.is_empty() {
             return;
         }
 
-        let base_scale = self.compute_scale(residuals);
+        let base_scale = self.compute_scale(residuals, scratch);
 
         let (method_type, tuning_constant) = match self {
             Self::Bisquare => (0, Self::DEFAULT_BISQUARE_C),
@@ -180,16 +136,18 @@ impl RobustnessMethod {
     // ========================================================================
 
     /// Compute robust scale estimate with MAD fallback.
-    fn compute_scale<T: Float>(&self, residuals: &[T]) -> T {
-        let mad = compute_mad(residuals);
+    fn compute_scale<T: Float>(&self, residuals: &[T], scratch: &mut [T]) -> T {
+        // Use scratch buffer for MAD to avoid allocation
+        scratch.copy_from_slice(residuals);
+        let mad = compute_mad(scratch);
 
         // Compute MAR (Mean Absolute Residual) inline
-        let mean_abs = if residuals.is_empty() {
-            T::zero()
-        } else {
-            let sum_abs = residuals.iter().fold(T::zero(), |acc, &r| acc + r.abs());
-            sum_abs / T::from(residuals.len()).unwrap()
-        };
+        let n = residuals.len();
+        let mut sum_abs = T::zero();
+        for &r in residuals {
+            sum_abs = sum_abs + r.abs();
+        }
+        let mean_abs = sum_abs / T::from(n).unwrap();
 
         let relative_threshold = T::from(Self::SCALE_THRESHOLD).unwrap() * mean_abs;
         let absolute_threshold = T::from(Self::MIN_TUNED_SCALE).unwrap();

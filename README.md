@@ -3,11 +3,11 @@
 [![License](https://img.shields.io/badge/License-AGPL--3.0%20OR%20Commercial-blue.svg)](LICENSE)
 [![R-CMD-check](https://github.com/thisisamirv/fastLowess-R/actions/workflows/ci.yml/badge.svg)](https://github.com/thisisamirv/fastLowess-R/actions/workflows/ci.yml)
 
-**High-performance parallel LOWESS (Locally Weighted Scatterplot Smoothing) for R** — A high-level wrapper around the [`fastLowess`](https://github.com/thisisamirv/fastLowess) Rust crate that offers significant speedups over `stats::lowess` while providing robust statistics, uncertainty quantification, and memory-efficient streaming.
+**High-performance parallel LOWESS (Locally Weighted Scatterplot Smoothing) for R** — A high-level wrapper around the [`fastLowess`](https://github.com/thisisamirv/fastLowess) Rust crate that adds rayon-based parallelism and seamless R integration.
 
 ## Features
 
-- **Parallel Execution**: Multi-core regression fits via Rust's Rayon, achieving substantial speedups on large datasets.
+- **Parallel by Default**: Multi-core regression fits via [rayon](https://crates.io/crates/rayon), achieving substantial speedups on large datasets.
 - **Robust Statistics**: MAD-based scale estimation and IRLS with Bisquare, Huber, or Talwar weighting.
 - **Uncertainty Quantification**: Point-wise standard errors, confidence intervals, and prediction intervals.
 - **Optimized Performance**: Delta optimization for skipping dense regions and streaming/online modes.
@@ -16,7 +16,7 @@
 
 ## Robustness Advantages
 
-This implementation is **more robust than statsmodels** due to two key design choices:
+Built on the same core as `lowess`, this implementation is **more robust than statsmodels** due to two key design choices:
 
 ### MAD-Based Scale Estimation
 
@@ -63,64 +63,56 @@ The factor 1.4826 = 1/Phi^-1(3/4) ensures consistency with the standard deviatio
 
 ## Performance Advantages
 
-Using the `bench` package for **high-resolution timing and memory metrics**, the `fastlowess` R package demonstrates **consistent performance superiority** over base R's `stats::lowess`. The Rust-backed implementation excels in **complex, high-volume, and pathological scenarios**, delivering speedups of **1.4x to 3.4x** for production-scale workloads.
+Benchmarked against R's `stats::lowess`. Achieves **1.4x to 3.4x faster performance** across different tested scenarios. The parallel implementation ensures efficient processing even at scale.
 
 ### Summary
 
 | Category               | Median Speedup | Mean Speedup |
-|------------------------|----------------|--------------|
-| **Genomic Data**       | 3.02×          | 2.53×        |
-| **Pathological Cases** | 2.28×          | 2.38×        |
-| **Iterations**         | 1.68×          | 1.80×        |
-| **Scalability**        | 1.66×          | 1.40×        |
-| **Fraction Variations**| 1.58×          | 1.54×        |
-| **Delta Parameter**    | 1.26×          | 1.68×        |
-| **Scientific Data**    | 1.19×          | 1.17×        |
-| **Financial Data**     | 0.96×          | 0.97×        |
+| :--------------------- | :------------- | :----------- |
+| **Genomic Data**       | **3.02×**      | 2.53×        |
+| **Pathological Cases** | **2.28×**      | 2.38×        |
+| **Iterations**         | **1.68×**      | 1.80×        |
+| **Scalability**        | **1.66×**      | 1.40×        |
+| **Fraction**           | **1.58×**      | 1.54×        |
+| **Delta**              | **1.26×**      | 1.68×        |
+| **Scientific**         | **1.19×**      | 1.17×        |
+| **Financial**          | **0.96×**      | 0.97×        |
 
-### Top 10 Performance Wins (fastlowess)
+### Top 10 Performance Wins
 
-| Benchmark             | Base R    | fastlowess | Speedup    |
-|-----------------------|-----------|------------|------------|
-| genomic_10000         | 116.67 ms | 33.93 ms   | **3.44×**  |
-| delta_none            | 173.95 ms | 50.89 ms   | **3.42×**  |
-| genomic_5000          | 29.32 ms  | 9.70 ms    | **3.02×**  |
-| clustered_x           | 1.46 ms   | 0.54 ms    | **2.70×**  |
-| iterations_1          | 0.78 ms   | 0.31 ms    | **2.53×**  |
-| extreme_outliers      | 4.37 ms   | 1.90 ms    | **2.30×**  |
-| high_noise            | 5.13 ms   | 2.26 ms    | **2.27×**  |
-| constant_y            | 1.09 ms   | 0.48 ms    | **2.26×**  |
-| iterations_0          | 0.37 ms   | 0.18 ms    | **2.04×**  |
-| financial_10000       | 1.31 ms   | 0.73 ms    | **1.79×**  |
-
-### Why fastlowess is Faster
-
-1. **Modern SIMD & Vectorization**: Rust's compiler generates highly optimized SIMD instructions for the inner-most weight and kernel loops.
-2. **Work-Stealing Parallelism**: Leverages all available CPU cores via the `Rayon` framework for datasets N >= 1,000.
-3. **Memory Safety & Locality**: Maintains tight memory layout and cache affinity without unnecessary allocations.
-4. **Optimized Robustness**: The robustness weighting is implemented as an optimized broadcast operation, minimizing redundant passes.
+| Benchmark        | stats::lowess | fastlowess | Speedup    |
+| :--------------- | :------------ | :--------- | :--------- |
+| genomic_10000    | 116.67 ms     | 33.93 ms   | **3.44×**  |
+| delta_none       | 173.95 ms     | 50.89 ms   | **3.42×**  |
+| genomic_5000     | 29.32 ms      | 9.70 ms    | **3.02×**  |
+| clustered_x      | 1.46 ms       | 0.54 ms    | **2.70×**  |
+| iterations_1     | 0.78 ms       | 0.31 ms    | **2.53×**  |
+| extreme_outliers | 4.37 ms       | 1.90 ms    | **2.30×**  |
+| high_noise       | 5.13 ms       | 2.26 ms    | **2.27×**  |
+| constant_y       | 1.09 ms       | 0.48 ms    | **2.26×**  |
+| iterations_0     | 0.37 ms       | 0.18 ms    | **2.04×**  |
+| financial_10000  | 1.31 ms       | 0.73 ms    | **1.79×**  |
 
 Check [Benchmarks](https://github.com/thisisamirv/fastLowess-R/tree/bench/benchmarks) for detailed results and reproducible benchmarking code.
 
 ## Installation
 
-### Prerequisites
+Install pre-built binaries from R-universe (no Rust required):
 
-This package requires **Rust** to compile from source.
+```r
+install.packages("fastlowess", repos = "https://thisisamirv.r-universe.dev")
+```
 
-1. **Install Rust**: Visit [rustup.rs](https://rustup.rs/) and follow instructions.
-2. **Verify**: Run `rustc --version` in your terminal.
+### From Source (Development)
 
-### Installing the Package
-
-Once Rust is installed, you can install the development version from GitHub:
+To install from source (requires [Rust](https://rustup.rs/)):
 
 ```r
 # install.packages("devtools")
 devtools::install_github("thisisamirv/fastLowess-R")
 ```
 
-**Note**: First-time installation may take 2-5 minutes as it compiles the Rust core.
+**Note**: First-time source installation may take 2-5 minutes to compile.
 
 ## Quick Start
 
@@ -147,75 +139,69 @@ smooth(
     # Smoothing span (0, 1]
     fraction = 0.5,
 
-    # Robustness iterations for outlier resistance
+    # Robustness iterations
     iterations = 3L,
 
-    # Interpolation threshold for performance optimization
-    # NULL (default) auto-calculates based on data range
+    # Interpolation threshold
     delta = 0.01,
 
-    # Kernel function selection
-    # Options: "tricube", "gaussian", "epanechnikov", "uniform", etc.
+    # Kernel function
     weight_function = "tricube",
 
-    # Robustness method selection
-    # Options: "bisquare", "huber", "talwar"
+    # Robustness method
     robustness_method = "bisquare",
 
-    # Zero-weight fallback behavior
-    # Options: "uselocalmean", "returnoriginal", "returnnone"
-    zero_weight_fallback = "uselocalmean",
+    # Zero-weight fallback
+    zero_weight_fallback = "use_local_mean",
 
-    # Boundary handling (for edge effects)
-    # Options: "extend", "reflect", "zero"
+    # Boundary handling
     boundary_policy = "extend",
 
-    # Uncertainty Quantification
+    # Intervals
     confidence_intervals = 0.95,
     prediction_intervals = 0.95,
 
-    # Output selection
+    # Diagnostics
     return_diagnostics = TRUE,
     return_residuals = TRUE,
     return_robustness_weights = TRUE,
 
-    # Cross-validation (for automatic parameter selection)
+    # Cross-validation
     cv_fractions = c(0.3, 0.5, 0.7),
     cv_method = "kfold",
     cv_k = 5L,
 
-    # Multi-threading (via Rust/Rayon)
+    # Convergence
+    auto_converge = 1e-4,
+
+    # Parallelism
     parallel = TRUE
 )
 ```
 
 ## Result Structure
 
-The `smooth()` function returns a named list containing:
+The `smooth()` function returns a named list:
 
 ```r
-result <- list(
-    x = ...,                   # Sorted independent variable values
-    y = ...,                   # Smoothed dependent variable values
-    standard_errors = ...,     # Point-wise standard errors (if computed)
-    confidence_lower = ...,    # Lower bound of confidence interval
-    confidence_upper = ...,    # Upper bound of confidence interval
-    prediction_lower = ...,    # Lower bound of prediction interval
-    prediction_upper = ...,    # Upper bound of prediction interval
-    residuals = ...,           # Model residuals (y - y_fit)
-    robustness_weights = ...,  # Final weights used for outlier handling
-    diagnostics = list(...),   # Detailed fit diagnostics (RMSE, R^2, etc.)
-    iterations_used = ...,     # Number of robustness iterations performed
-    fraction_used = ...,       # Smoothing fraction used (best if via CV)
-    cv_scores = ...            # RMSE scores for each CV candidate
-)
+result$x                    # Sorted independent variable values
+result$y                    # Smoothed dependent variable values
+result$standard_errors      # Point-wise standard errors
+result$confidence_lower     # Lower bound of confidence interval
+result$confidence_upper     # Upper bound of confidence interval
+result$prediction_lower     # Lower bound of prediction interval
+result$prediction_upper     # Upper bound of prediction interval
+result$residuals            # Residuals (y - fit)
+result$robustness_weights   # Final robustness weights
+result$diagnostics          # Diagnostics (RMSE, R², etc.)
+result$iterations_used      # Number of iterations performed
+result$fraction_used        # Smoothing fraction used
+result$cv_scores            # CV scores for each candidate
 ```
 
-## Execution Modes
+## Streaming Processing
 
-### Streaming Processing
-
-For datasets too large to fit in memory (processes in chunks):
+For datasets that don't fit in memory:
 
 ```r
 result <- smooth_streaming(
@@ -227,9 +213,9 @@ result <- smooth_streaming(
 )
 ```
 
-### Online Processing
+## Online Processing
 
-For real-time data streams or sliding windows:
+For real-time data streams:
 
 ```r
 result <- smooth_online(
@@ -244,26 +230,23 @@ result <- smooth_online(
 
 ### Fraction (Smoothing Span)
 
-- **0.1-0.3**: Local, captures rapid changes (wiggly)
+- **0.1-0.3**: Local, captures rapid changes
 - **0.4-0.6**: Balanced, general-purpose
 - **0.7-1.0**: Global, smooth trends only
 - **Default: 0.67** (2/3, Cleveland's choice)
-- **Use CV** when uncertain
 
 ### Robustness Iterations
 
 - **0**: Clean data, speed critical
-- **1-2**: Light contamination
-- **3**: Default, good balance (recommended)
+- **1-3**: Default, good balance
 - **4-5**: Heavy outliers
-- **>5**: Diminishing returns
 
 ### Kernel Function
 
-- **Tricube** (default): Best all-around, smooth, efficient
-- **Epanechnikov**: Theoretically optimal MSE
-- **Gaussian**: Very smooth, no compact support
-- **Uniform**: Fastest, least smooth (moving average)
+- **Tricube** (default): Best all-around
+- **Epanechnikov**: Optimal MSE
+- **Gaussian**: Very smooth
+- **Uniform**: Moving average
 
 ### Delta Optimization
 
@@ -273,7 +256,7 @@ result <- smooth_online(
 
 ## Demos
 
-Run included demos to see the package in action:
+Check the included demos:
 
 ```r
 demo(package = "fastlowess")
@@ -286,7 +269,7 @@ demo("streaming_smoothing")
 
 Validated against:
 
-- **Base R (stats::lowess)**: Results matched to machine precision.
+- **R (stats::lowess)**: Results matched to machine precision.
 - **Original Paper**: Reproduces Cleveland (1979) results.
 
 Check [Validation](https://github.com/thisisamirv/fastLowess-R/tree/bench/validation) for more information. Small variations in results are expected due to differences in scale estimation and padding.
@@ -294,7 +277,7 @@ Check [Validation](https://github.com/thisisamirv/fastLowess-R/tree/bench/valida
 ## Related Work
 
 - [fastLowess (Rust core)](https://github.com/thisisamirv/fastLowess)
-- [fastLowess-py (Python wrapper)](https://github.com/thisisamirv/fastlowess-py)
+- [fastLowess-py (Python wrapper)](https://github.com/thisisamirv/fastLowess-py)
 
 ## Contributing
 

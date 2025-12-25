@@ -32,7 +32,7 @@ Package: extendr-macros (0.8.1)
 Authors: andy-thomason <andy@andythomason.com>, Thomas Down, Mossa Merhi Reimert <mossa@sund.ku.dk>, Josiah Parry <josiah.parry@gmail.com>, Claus O. Wilke <wilke@austin.utexas.edu>, Hiroaki Yutani, Ilia A. Kosenkov <ilia.kosenkov@outlook.com>, Michael Milton <michael.r.milton@gmail.com>
 License: MIT
 ----------------------------------------
-Package: fastLowess-R (0.1.1)
+Package: fastLowess (0.3.0)
 Authors: Amir Valizadeh <thisisamirv@gmail.com>
 License: AGPL-3.0-or-later
 ----------------------------------------
@@ -40,7 +40,7 @@ Package: libm (0.2.15)
 Authors: Jorge Aparicio <jorge@japaric.io>
 License: MIT
 ----------------------------------------
-Package: lowess (0.4.1)
+Package: lowess (0.6.0)
 Authors: Amir Valizadeh <thisisamirv@gmail.com>
 License: AGPL-3.0-or-later
 ----------------------------------------
@@ -72,7 +72,7 @@ Package: paste (1.0.15)
 Authors: David Tolnay <dtolnay@gmail.com>
 License: MIT OR Apache-2.0
 ----------------------------------------
-Package: portable-atomic (1.11.1)
+Package: portable-atomic (1.12.0)
 Authors: 
 License: Apache-2.0 OR MIT
 ----------------------------------------

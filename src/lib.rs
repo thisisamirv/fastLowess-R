@@ -6,9 +6,11 @@
 
 use extendr_api::prelude::*;
 
+use fastLowess::internals::api::{
+    BoundaryPolicy, RobustnessMethod, UpdateMode, WeightFunction, ZeroWeightFallback,
+};
 use fastLowess::prelude::{
-    Batch, BoundaryPolicy, CrossValidationStrategy, Lowess as LowessBuilder, LowessResult, Online,
-    RobustnessMethod, Streaming, UpdateMode, WeightFunction, ZeroWeightFallback,
+    Batch, KFold, LOOCV, Lowess as LowessBuilder, LowessResult, Online, Streaming,
 };
 
 // ============================================================================
@@ -179,17 +181,20 @@ fn smooth(
 
     // Cross-validation if fractions are provided
     if let NotNull(fractions) = cv_fractions {
-        let (cv_strategy, k_opt) = match cv_method.to_lowercase().as_str() {
-            "simple" | "loo" | "loocv" | "leave_one_out" => (CrossValidationStrategy::LOOCV, None),
-            "kfold" | "k_fold" | "k-fold" => (CrossValidationStrategy::KFold, Some(cv_k as usize)),
+        match cv_method.to_lowercase().as_str() {
+            "simple" | "loo" | "loocv" | "leave_one_out" => {
+                builder = builder.cross_validate(LOOCV(&fractions));
+            }
+            "kfold" | "k_fold" | "k-fold" => {
+                builder = builder.cross_validate(KFold(cv_k as usize, &fractions));
+            }
             _ => {
                 return Err(Error::Other(format!(
                     "Unknown CV method: {}. Valid options: loocv, kfold",
                     cv_method
                 )));
             }
-        };
-        builder = builder.cross_validate(&fractions, cv_strategy, k_opt);
+        }
     }
 
     let result = builder

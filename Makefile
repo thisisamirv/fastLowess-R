@@ -1,5 +1,5 @@
 # Run all local checks (formatting, linting, building, tests, docs)
-check: fmt clippy build test doc check-CMD cran
+check: fmt clippy vendor-update build test doc check-CMD cran
 	@echo "All checks completed successfully!"
 
 # Formatting
@@ -32,7 +32,7 @@ lint-r:
 	@echo "R lint complete!"
 
 # Build
-build: build-default build-serial r-install r-install-dev
+build: build-default build-serial build-release r-install r-install-dev
 
 build-default:
 	@echo "Building crate (default / parallel)..."
@@ -42,6 +42,11 @@ build-serial:
 	@echo "Building crate (serial / no parallel)..."
 	@(cd src && cargo build --config cargo/config.toml --no-default-features)
 	@echo "Build complete!"
+
+build-release:
+	@echo "Building crate (release mode)..."
+	@(cd src && cargo build --config cargo/config.toml --release)
+	@echo "Release build complete!"
 
 r-install:
 	@echo "Building and installing R package..."
@@ -55,7 +60,15 @@ r-install-dev:
 	@echo "Development install complete!"
 
 # Test
-test:
+test: test-rust test-r
+	@echo "All tests complete!"
+
+test-rust:
+	@echo "Running Rust tests..."
+	@(cd src && cargo test --config cargo/config.toml)
+	@echo "Rust tests complete!"
+
+test-r:
 	@echo "Running R examples..."
 	@Rscript demo/batch_smoothing.R
 	@Rscript demo/online_smoothing.R
@@ -68,7 +81,7 @@ check-CMD: check-r-no-manual
 
 check-r-no-manual:
 	@echo "Running R CMD check (without manual)..."
-	@Rscript -e "devtools::check(manual = FALSE)"
+	@Rscript -e "devtools::check(manual = FALSE, error_on = 'error')"
 	@echo "R CMD check complete!"
 
 # Release
@@ -76,17 +89,17 @@ check-r-no-manual:
 cran:
 	@echo "Preparing for CRAN submission..."
 	@./scripts/prepare_cran.sh
-	@$(MAKE) install
+	@$(MAKE) r-install
 	@echo "DONE! Package tarball is ready for submission."
 
 # Update vendored dependencies from crates.io
 vendor-update:
 	@echo "Updating dependencies from crates.io..."
 	# 1. Switch to registry versions in Cargo.toml
-	@sed -i 's|fastLowess = { path = "fastLowess",|fastLowess = {|g' src/Cargo.toml
-	@sed -i '/\[patch.crates-io\]/,/lowess = { path = "lowess" }/d' src/Cargo.toml
-	# 2. Remove local directories
-	@rm -rf src/fastLowess src/lowess
+	@sed -i 's|fastLowess = { path = "vendor/fastLowess",|fastLowess = {|g' src/Cargo.toml
+	@sed -i '/\[patch.crates-io\]/,/lowess = { path = "vendor\/lowess" }/d' src/Cargo.toml
+	# 2. Remove old vendor directory
+	@rm -rf src/vendor
 	# 3. Re-vendor
 	@echo "Running cargo vendor..."
 	@(cd src && cargo vendor vendor)
@@ -123,6 +136,7 @@ clean: clean-rust clean-r
 clean-rust:
 	@echo "Performing cargo clean..."
 	@(cd src && cargo clean)
+	@rm -rf src/Cargo.lock
 
 clean-r:
 	@echo "Cleaning R build artifacts..."
@@ -133,3 +147,42 @@ clean-r:
 	@rm -rf src/fastlowess.so
 	@rm -rf fastlowess*.tar.gz
 	@rm -rf target
+	@rm -rf src/target
+
+# Help
+help:
+	@echo "Available targets:"
+	@echo "  check          - Run all checks (fmt, clippy, build, test, doc, R CMD check)"
+	@echo ""
+	@echo "Formatting:"
+	@echo "  fmt            - Check and fix Rust formatting"
+	@echo "  fmt-rust       - Check Rust formatting"
+	@echo "  fmt-fix-rust   - Fix Rust formatting"
+	@echo ""
+	@echo "Linting:"
+	@echo "  clippy         - Run Rust clippy (default + serial)"
+	@echo "  lint-r         - Run R lintr"
+	@echo ""
+	@echo "Building:"
+	@echo "  build          - Build Rust crate + install R package"
+	@echo "  build-release  - Build Rust crate (release mode)"
+	@echo "  r-install      - Build and install R package"
+	@echo "  r-install-dev  - Install R package (development mode)"
+	@echo ""
+	@echo "Testing:"
+	@echo "  test           - Run all tests (Rust + R)"
+	@echo "  test-rust      - Run Rust tests"
+	@echo "  test-r         - Run R examples"
+	@echo ""
+	@echo "Documentation:"
+	@echo "  doc            - Build all documentation"
+	@echo "  r-doc          - Generate R documentation"
+	@echo ""
+	@echo "Release:"
+	@echo "  cran           - Prepare for CRAN submission"
+	@echo "  vendor-update  - Update vendored dependencies from crates.io"
+	@echo ""
+	@echo "Other:"
+	@echo "  clean          - Clean all build artifacts"
+	@echo "  help           - Show this help message"
+

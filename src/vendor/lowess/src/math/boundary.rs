@@ -1,17 +1,41 @@
-//! Boundary padding utilities for reducing smoothing bias at data edges.
+//! Boundary padding strategies for local regression.
 //!
-//! This module implements various strategies for extending a dataset beyond its
-//! original boundaries. By padding the input data, local regression at the
-//! edges has more context, which helps mitigate the "boundary effect" where
-//! the fit typically exhibits higher bias.
+//! ## Purpose
+//!
+//! This module implements boundary padding strategies to reduce smoothing bias at
+//! data edges. By providing context beyond the original boundaries, local
+//! regression can perform better near the start and end of the dataset.
+//!
+//! ## Design notes
+//!
+//! * **Strategy Pattern**: Uses `BoundaryPolicy` enum to select the padding method.
+//! * **Allocation**: Creates new vectors for padded data (necessary for extension).
+//!
+//! ## Key concepts
+//!
+//! * **Boundary Effect**: The tendency for local regression to have higher bias at edges.
+//! * **Padding strategies**: `Extend` (repeat edge), `Reflect` (mirror), `Zero` (pad 0).
+//!
+//! ## Invariants
+//!
+//! * Padding length is limited to half the window size or `n - 1`.
+//! * Original data is preserved in the middle of the value range.
+//!
+//! ## Non-goals
+//!
+//! * This module does not perform in-place modification of input data.
 
-#[cfg(not(feature = "std"))]
-extern crate alloc;
+// Feature-gated imports
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::vec::Vec;
 
-use crate::primitives::partition::BoundaryPolicy;
+// External dependencies
 use num_traits::Float;
+
+// Internal dependencies
+use crate::primitives::partition::BoundaryPolicy;
 
 /// Apply a boundary policy to pad the input data.
 pub fn apply_boundary_policy<T: Float>(
@@ -21,10 +45,6 @@ pub fn apply_boundary_policy<T: Float>(
     policy: BoundaryPolicy,
 ) -> (Vec<T>, Vec<T>) {
     let n = x.len();
-    if n < 2 || window_size < 2 {
-        return (x.to_vec(), y.to_vec());
-    }
-
     // Number of points to pad on each side (half-window)
     let pad_len = (window_size / 2).min(n - 1);
     if pad_len == 0 {

@@ -2,51 +2,22 @@
 //!
 //! ## Purpose
 //!
-//! This module defines the [`LowessResult`] struct which encapsulates all
-//! outputs from a LOWESS smoothing operation. It provides a comprehensive
-//! container for smoothed values, diagnostics, confidence/prediction intervals,
-//! and metadata about the smoothing process.
+//! This module defines the `LowessResult` struct which encapsulates all
+//! outputs from a LOWESS smoothing operation, including smoothed values,
+//! diagnostics, and confidence/prediction intervals.
 //!
 //! ## Design notes
 //!
-//! * All optional outputs use `Option<Vec<T>>` for memory efficiency.
-//! * Results are generic over `Float` types to support f32 and f64.
-//! * Provides convenience methods for common queries.
-//! * Implements `Display` for human-readable output with adaptive formatting.
-//! * Sorted x-values are stored to maintain correspondence with outputs.
-//! * All vectors have the same length (number of data points).
-//!
-//! ## Available outputs
-//!
-//! * **Core outputs**: Sorted x-values, smoothed y-values
-//! * **Uncertainty**: Standard errors, confidence intervals, prediction intervals
-//! * **Diagnostics**: RMSE, MAE, R^2, AIC, AICc, effective DF
-//! * **Residuals**: Differences between original and smoothed values
-//! * **Robustness**: Final robustness weights from iterative refinement
-//! * **Metadata**: Fraction used, iterations performed, CV scores
+//! * **Memory Efficiency**: All optional outputs use `Option<Vec<T>>`.
+//! * **Generics**: Results are generic over `Float` types.
+//! * **Ergonomics**: Implements `Display` for human-readable output.
+//! * **Consistency**: Sorted x-values are stored to maintain correspondence.
 //!
 //! ## Key concepts
 //!
-//! ### Optional Outputs
-//!
-//! Most results are optional and only populated when specific features are
-//! enabled (e.g., standard errors, diagnostics). This minimizes memory usage
-//! and computation time for basic smoothing tasks.
-//!
-//! ### Intervals
-//!
-//! * **Confidence Intervals**: Quantify uncertainty in the fitted mean curve:
-//!   y_hat +/- z * SE.
-//! * **Prediction Intervals**: Quantify uncertainty for individual new observations,
-//!   accounting for both estimation error and residual noise:
-//!   y_hat +/- z * sqrt(SE^2 + sigma^2).
-//!
-//! ### Iteration and Selection Metadata
-//!
-//! When auto-convergence is used, `iterations_used` provides the actual count
-//! of robustness passes. When cross-validation is used, `fraction_used` reflects
-//! the optimal bandwidth selected, and `cv_scores` provide the RMSE values for
-//! all candidate fractions.
+//! * **Optional Outputs**: Results are only populated when specific features are enabled.
+//! * **Intervals**: Confidence (mean curve) and Prediction (new observations).
+//! * **Metadata**: Tracks iterations, fraction used, and CV scores.
 //!
 //! ## Invariants
 //!
@@ -60,28 +31,26 @@
 //! * This module does not perform calculations; it only stores results.
 //! * This module does not validate result consistency (responsibility of the engine).
 //! * This module does not provide serialization/deserialization logic.
-//!
-//! ## Visibility
-//!
-//! The [`LowessResult`] struct is part of the public API and is the primary
-//! result type returned by all LOWESS adapters.
 
+// Feature-gated imports
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
-
 #[cfg(feature = "std")]
 use std::vec::Vec;
 
+// External dependencies
 use core::cmp::Ordering;
+use core::fmt::{Display, Formatter, Result};
 use num_traits::Float;
 
+// Internal dependencies
 use crate::evaluation::diagnostics::Diagnostics;
 
 // ============================================================================
 // Result Structure
 // ============================================================================
 
-/// Comprehensive LOWESS result containing smoothed values and diagnostics.
+/// Comprehensive LOWESS output containing smoothed values and diagnostics.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LowessResult<T> {
     /// Sorted x-values (independent variable).
@@ -159,8 +128,8 @@ impl<T: Float> LowessResult<T> {
 // Display Implementation
 // ============================================================================
 
-impl<T: Float + core::fmt::Display> core::fmt::Display for LowessResult<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl<T: Float + Display> Display for LowessResult<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         writeln!(f, "Summary:")?;
         writeln!(f, "  Data points: {}", self.x.len())?;
         writeln!(f, "  Fraction: {}", self.fraction_used)?;

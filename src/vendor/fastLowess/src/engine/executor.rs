@@ -9,55 +9,23 @@
 //!
 //! ## Design notes
 //!
-//! * Provides a drop-in replacement for the sequential smoothing pass (`SmoothPassFn`).
-//! * Uses `rayon` for data-parallel execution across CPU cores.
-//! * Reuses weight buffers per thread via `map_init` to minimize allocations.
-//! * Compatible with the unified execution engine in the `lowess` crate.
-//! * Supports delta optimization for sparse fitting with linear interpolation.
-//! * Generic over `Float` types to support f32 and f64.
+//! * **Implementation**: Provides a drop-in replacement for the sequential smoothing pass.
+//! * **Parallelism**: Uses `rayon` for data-parallel execution across CPU cores.
+//! * **Optimization**: Reuses weight buffers per thread to minimize allocations.
+//! * **Interpolation**: Supports delta optimization for sparse fitting.
+//! * **Generics**: Generic over `Float` types.
 //!
 //! ## Key concepts
 //!
-//! ## Execution Flow
-//!
-//! 1. Create a parallel iterator over data points or anchor points.
-//! 2. Initialize thread-local scratch buffers (weights).
-//! 3. Perform weighted local regressions in parallel across CPU cores.
-//! 4. Collect results and write to the output buffer.
-//! 5. If `delta` optimization is active, linearly interpolate between anchors.
-//!
-//! ### Parallel Fitting
-//! Instead of fitting points sequentially, the parallel executor:
-//! 1. Distributes points across available CPU cores via `rayon`.
-//! 2. Each thread fits its assigned points independently using local regression.
-//! 3. Results are collected and written to the output buffer in the correct order.
-//!
-//! ### Delta Optimization
-//! When `delta > 0`, instead of fitting every point, the executor:
-//! 1. Pre-computes "anchor" points spaced at least `delta` apart.
-//! 2. Fits only these anchor points in parallel.
-//! 3. Linearly interpolates between anchors for all intermediate points.
-//!
-//! This follows the approach described in Cleveland (1979) and provides
-//! significant speedup on dense data with minimal accuracy loss.
-//!
-//! ### Buffer Reuse
-//! To minimize allocation overhead in tight loops:
-//! * Each thread maintains its own weight buffer via `map_init`
-//! * Buffers are zeroed and reused for each point (O(N) memset vs O(N) alloc)
-//! * This provides significant speedup for large datasets
-//!
-//! ### Integration with lowess
-//! The `smooth_pass_parallel` function matches the `SmoothPassFn` type:
-//! ```text
-//! fn(x, y, window_size, delta, use_robustness, robustness_weights, y_smooth, weight_fn, zero_weight_flag)
-//! ```
-//! This allows it to be injected into the `lowess` executor's iteration loop.
+//! * **Parallel Fitting**: Distributes points across CPU cores independently.
+//! * **Delta Optimization**: Fits only "anchor" points and interpolates between them.
+//! * **Buffer Reuse**: Thread-local scratch buffers to avoid allocation overhead.
+//! * **Integration**: Plugs into the `lowess` executor via the `SmoothPassFn` hook.
 //!
 //! ## Invariants
 //!
 //! * Input x-values are assumed to be monotonically increasing (sorted).
-//! * All buffers (x, y, y_smooth, robustness_weights) have the same length.
+//! * All buffers have the same length as the input data.
 //! * Robustness weights are expected to be in [0, 1].
 //! * Window size is at least 1 and at most n.
 //!
@@ -66,20 +34,20 @@
 //! * This module does not handle the iteration loop (handled by `lowess::executor`).
 //! * This module does not validate input data (handled by `validator`).
 //! * This module does not sort input data (caller's responsibility).
-//!
-//! ## Visibility
-//!
-//! This module is an internal implementation detail used by the LOWESS
-//! adapters. The parallel smoothing function is exported for use by the
-//! high-level API but may change without notice.
 
+// Feature-gated imports
+#[cfg(feature = "cpu")]
+use rayon::prelude::*;
+
+// External dependencies
+use num_traits::Float;
+
+// Export dependencies from lowess crate
 use lowess::internals::algorithms::regression::{
     LinearRegression, Regression, RegressionContext, ZeroWeightFallback,
 };
 use lowess::internals::math::kernel::WeightFunction;
 use lowess::internals::primitives::window::Window;
-use num_traits::Float;
-use rayon::prelude::*;
 
 // ============================================================================
 // Parallel Smoothing Function
@@ -87,6 +55,7 @@ use rayon::prelude::*;
 
 /// Perform a single smoothing pass over all points in parallel.
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "cpu")]
 pub fn smooth_pass_parallel<T>(
     x: &[T],
     y: &[T],
@@ -217,52 +186,49 @@ pub fn smooth_pass_parallel<T>(
     }
 }
 
-/// Compute anchor points for delta optimization.
+/// Compute anchor points for delta optimization using O(log n) binary search.
+#[cfg(feature = "cpu")]
 fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
     let n = x.len();
     if n == 0 {
         return vec![];
     }
 
-    let mut anchors = vec![0]; // Always include the first point
+    let mut anchors = vec![0];
     let mut last_fitted = 0usize;
-    let mut k = 1usize;
 
-    // Main loop: process all points using inline delta logic
-    while k < n {
+    while last_fitted < n - 1 {
         let cutpoint = x[last_fitted] + delta;
+        let next_idx = x[last_fitted + 1..].partition_point(|&xi| xi <= cutpoint) + last_fitted + 1;
 
-        // Scan forward, handling tied values inline
-        while k < n && x[k] <= cutpoint {
-            // Handle tied x-values: they become anchors too
-            if x[k] == x[last_fitted] {
-                if k != last_fitted {
-                    anchors.push(k);
-                }
-                last_fitted = k;
+        let x_last = x[last_fitted];
+        let mut tie_end = last_fitted;
+        for (i, &xi) in x
+            .iter()
+            .enumerate()
+            .take(next_idx.min(n))
+            .skip(last_fitted + 1)
+        {
+            if xi == x_last {
+                anchors.push(i);
+                tie_end = i;
+            } else {
+                break;
             }
-            k += 1;
+        }
+        if tie_end > last_fitted {
+            last_fitted = tie_end;
         }
 
-        // Determine current anchor point to fit
-        // Either k-1 (last point within delta) or at minimum last_fitted+1
-        let current = if k > 0 {
-            usize::max(k.saturating_sub(1), last_fitted + 1).min(n - 1)
-        } else {
-            (last_fitted + 1).min(n - 1)
-        };
-
-        // Check if we've made progress
+        let current = usize::max(next_idx.saturating_sub(1), last_fitted + 1).min(n - 1);
         if current <= last_fitted {
             break;
         }
 
         anchors.push(current);
         last_fitted = current;
-        k = current + 1;
     }
 
-    // Ensure the last point is included if not already
     if *anchors.last().unwrap_or(&0) != n - 1 {
         anchors.push(n - 1);
     }
@@ -271,6 +237,7 @@ fn compute_anchor_points<T: Float>(x: &[T], delta: T) -> Vec<usize> {
 }
 
 /// Linearly interpolate between two fitted anchor points.
+#[cfg(feature = "cpu")]
 fn interpolate_gap<T: Float>(x: &[T], y_smooth: &mut [T], start: usize, end: usize) {
     if end <= start + 1 {
         return;
@@ -284,20 +251,19 @@ fn interpolate_gap<T: Float>(x: &[T], y_smooth: &mut [T], start: usize, end: usi
     let denom = x1 - x0;
     if denom <= T::zero() {
         let avg = (y0 + y1) / T::from(2.0).unwrap();
-        for ys in y_smooth.iter_mut().take(end).skip(start + 1) {
-            *ys = avg;
-        }
+        y_smooth[(start + 1)..end].fill(avg);
         return;
     }
 
+    let slope = (y1 - y0) / denom;
     for k in (start + 1)..end {
-        let alpha = (x[k] - x0) / denom;
-        y_smooth[k] = y0 + alpha * (y1 - y0);
+        y_smooth[k] = y0 + (x[k] - x0) * slope;
     }
 }
 
 /// Fit all points in parallel (no delta optimization).
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "cpu")]
 fn fit_all_points_parallel<T>(
     x: &[T],
     y: &[T],

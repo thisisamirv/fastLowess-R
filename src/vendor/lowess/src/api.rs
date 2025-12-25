@@ -15,48 +15,42 @@
 //!
 //! ## Key concepts
 //!
-//! ### Execution Adapters
-//!
-//! * **Batch**: Standard in-memory processing for complete datasets.
-//! * **Streaming**: Chunked processing with overlap merging for large datasets.
-//! * **Online**: Incremental updates via a sliding window for real-time data.
+//! * **Execution Adapters**: Batch, Streaming, and Online modes.
+//! * **Configuration Flow**: Builder pattern ending in `.adapter(Adapter::Type)`.
+//! * **Validation**: Parameters are validated when `.build()` is called on the adapter.
 //!
 //! ### Configuration Flow
 //!
 //! 1. Create a [`LowessBuilder`] via `Lowess::new()`.
 //! 2. Chain configuration methods (`.fraction()`, `.iterations()`, etc.).
 //! 3. Select an adapter via `.adapter(Adapter::Batch)` to get an execution builder.
-//!
-//! ## Visibility
-//!
-//! This is the primary public API. Types re-exported here are considered stable.
 
+// Feature-gated imports
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::vec::Vec;
 
-use core::result;
+// External dependencies
 use num_traits::Float;
 
-// Internal adapters
+// Internal dependencies
 use crate::adapters::batch::BatchLowessBuilder;
 use crate::adapters::online::OnlineLowessBuilder;
 use crate::adapters::streaming::StreamingLowessBuilder;
-pub use crate::engine::executor::SmoothPassFn;
+use crate::engine::executor::{CVPassFn, IntervalPassFn, SmoothPassFn};
+use crate::evaluation::cv::{CVConfig, CVKind};
+use crate::evaluation::intervals::IntervalMethod;
+use crate::primitives::backend::Backend;
 
 // Publicly re-exported types
 pub use crate::algorithms::regression::ZeroWeightFallback;
 pub use crate::algorithms::robustness::RobustnessMethod;
 pub use crate::engine::output::LowessResult;
-pub use crate::evaluation::cv::CVMethod;
-pub use crate::evaluation::intervals::IntervalMethod;
+pub use crate::evaluation::cv::{KFold, LOOCV};
 pub use crate::math::kernel::WeightFunction;
 pub use crate::primitives::errors::LowessError;
 pub use crate::primitives::partition::{BoundaryPolicy, MergeStrategy, UpdateMode};
-
-/// Result type alias for LOWESS operations.
-pub type Result<T> = result::Result<T, LowessError>;
 
 /// Marker types for selecting execution adapters.
 #[allow(non_snake_case)]
@@ -89,19 +83,22 @@ pub struct LowessBuilder<T> {
     pub cv_fractions: Option<Vec<T>>,
 
     /// CV strategy (K-Fold/LOOCV).
-    pub cv_method: Option<CVMethod>,
+    pub(crate) cv_kind: Option<CVKind>,
+
+    /// CV seed for reproducibility.
+    pub(crate) cv_seed: Option<u64>,
 
     /// Relative convergence tolerance.
     pub auto_convergence: Option<T>,
 
     /// Enable performance/statistical diagnostics.
-    pub return_diagnostics: bool,
+    pub return_diagnostics: Option<bool>,
 
     /// Return original residuals r_i.
-    pub compute_residuals: bool,
+    pub compute_residuals: Option<bool>,
 
     /// Return final robustness weights w_i.
-    pub return_robustness_weights: bool,
+    pub return_robustness_weights: Option<bool>,
 
     /// Policy for handling data boundaries (default: Extend).
     pub boundary_policy: Option<BoundaryPolicy>,
@@ -127,11 +124,32 @@ pub struct LowessBuilder<T> {
     /// Minimum points required for a valid fit (Online only).
     pub min_points: Option<usize>,
 
-    /// Custom smooth pass function (e.g., for parallel execution).
+    // ======================================
+    // DEV
+    // ======================================
+    /// Custom smooth pass function.
+    #[doc(hidden)]
     pub custom_smooth_pass: Option<SmoothPassFn<T>>,
 
+    /// Custom cross-validation pass function.
+    #[doc(hidden)]
+    pub custom_cv_pass: Option<CVPassFn<T>>,
+
+    /// Custom interval estimation pass function.
+    #[doc(hidden)]
+    pub custom_interval_pass: Option<IntervalPassFn<T>>,
+
+    /// Execution backend hint.
+    #[doc(hidden)]
+    pub backend: Option<Backend>,
+
+    /// Parallel execution hint.
+    #[doc(hidden)]
+    pub parallel: Option<bool>,
+
     /// Tracks if any parameter was set multiple times (for validation).
-    pub(crate) duplicate_param: Option<&'static str>,
+    #[doc(hidden)]
+    pub duplicate_param: Option<&'static str>,
 }
 
 impl<T: Float> Default for LowessBuilder<T> {
@@ -159,11 +177,12 @@ impl<T: Float> LowessBuilder<T> {
             robustness_method: None,
             interval_type: None,
             cv_fractions: None,
-            cv_method: None,
+            cv_kind: None,
+            cv_seed: None,
             auto_convergence: None,
-            return_diagnostics: false,
-            compute_residuals: false,
-            return_robustness_weights: false,
+            return_diagnostics: None,
+            compute_residuals: None,
+            return_robustness_weights: None,
             boundary_policy: None,
             zero_weight_fallback: None,
             merge_strategy: None,
@@ -173,6 +192,10 @@ impl<T: Float> LowessBuilder<T> {
             window_capacity: None,
             min_points: None,
             custom_smooth_pass: None,
+            custom_cv_pass: None,
+            custom_interval_pass: None,
+            backend: None,
+            parallel: None,
             duplicate_param: None,
         }
     }
@@ -246,12 +269,6 @@ impl<T: Float> LowessBuilder<T> {
             self.duplicate_param = Some("min_points");
         }
         self.min_points = Some(points);
-        self
-    }
-
-    /// Set a custom smooth pass function for execution.
-    pub fn custom_smooth_pass(mut self, pass: SmoothPassFn<T>) -> Self {
-        self.custom_smooth_pass = Some(pass);
         self
     }
 
@@ -343,22 +360,13 @@ impl<T: Float> LowessBuilder<T> {
     }
 
     /// Enable automatic bandwidth selection via cross-validation.
-    pub fn cross_validate(
-        mut self,
-        fractions: &[T],
-        method: CrossValidationStrategy,
-        k: Option<usize>,
-    ) -> Self {
+    pub fn cross_validate(mut self, config: CVConfig<'_, T>) -> Self {
         if self.cv_fractions.is_some() {
             self.duplicate_param = Some("cross_validate");
         }
-        self.cv_fractions = Some(fractions.to_vec());
-        self.cv_method = Some(match method {
-            CrossValidationStrategy::KFold => CVMethod::KFold(k.unwrap_or(5)),
-            CrossValidationStrategy::LeaveOneOut | CrossValidationStrategy::LOOCV => {
-                CVMethod::LOOCV
-            }
-        });
+        self.cv_fractions = Some(config.fractions().to_vec());
+        self.cv_kind = Some(config.kind());
+        self.cv_seed = config.get_seed();
         self
     }
 
@@ -373,19 +381,58 @@ impl<T: Float> LowessBuilder<T> {
 
     /// Include statistical diagnostics (Metric, R², etc.) in output.
     pub fn return_diagnostics(mut self) -> Self {
-        self.return_diagnostics = true;
+        self.return_diagnostics = Some(true);
         self
     }
 
     /// Include residuals in output.
     pub fn return_residuals(mut self) -> Self {
-        self.compute_residuals = true;
+        self.compute_residuals = Some(true);
         self
     }
 
     /// Include final robustness weights in output.
     pub fn return_robustness_weights(mut self) -> Self {
-        self.return_robustness_weights = true;
+        self.return_robustness_weights = Some(true);
+        self
+    }
+
+    // ==========================
+    // Development Options
+    // ==========================
+
+    /// Set a custom smooth pass function for execution (only for dev)
+    #[doc(hidden)]
+    pub fn custom_smooth_pass(mut self, pass: SmoothPassFn<T>) -> Self {
+        self.custom_smooth_pass = Some(pass);
+        self
+    }
+
+    /// Set a custom cross-validation pass function (only for dev)
+    #[doc(hidden)]
+    pub fn custom_cv_pass(mut self, pass: CVPassFn<T>) -> Self {
+        self.custom_cv_pass = Some(pass);
+        self
+    }
+
+    /// Set a custom interval estimation pass function (only for dev)
+    #[doc(hidden)]
+    pub fn custom_interval_pass(mut self, pass: IntervalPassFn<T>) -> Self {
+        self.custom_interval_pass = Some(pass);
+        self
+    }
+
+    /// Set the execution backend hint (only for dev)
+    #[doc(hidden)]
+    pub fn backend(mut self, backend: Backend) -> Self {
+        self.backend = Some(backend);
+        self
+    }
+
+    /// Set parallel execution hint (only for dev)
+    #[doc(hidden)]
+    pub fn parallel(mut self, parallel: bool) -> Self {
+        self.parallel = Some(parallel);
         self
     }
 }
@@ -407,25 +454,75 @@ impl<T: Float> LowessAdapter<T> for Batch {
     type Output = BatchLowessBuilder<T>;
 
     fn convert(builder: LowessBuilder<T>) -> Self::Output {
-        BatchLowessBuilder {
-            fraction: builder.fraction.unwrap_or_else(|| T::from(0.67).unwrap()),
-            iterations: builder.iterations.unwrap_or(3),
-            delta: builder.delta,
-            weight_function: builder.weight_function.unwrap_or_default(),
-            robustness_method: builder.robustness_method.unwrap_or_default(),
-            interval_type: builder.interval_type,
-            cv_fractions: builder.cv_fractions,
-            cv_method: builder.cv_method,
-            auto_convergence: builder.auto_convergence,
-            return_diagnostics: builder.return_diagnostics,
-            compute_residuals: builder.compute_residuals,
-            return_robustness_weights: builder.return_robustness_weights,
-            zero_weight_fallback: builder.zero_weight_fallback.unwrap_or_default(),
-            boundary_policy: builder.boundary_policy.unwrap_or_default(),
-            deferred_error: None,
-            custom_smooth_pass: builder.custom_smooth_pass,
-            duplicate_param: builder.duplicate_param,
+        let mut result = BatchLowessBuilder::default();
+
+        if let Some(fraction) = builder.fraction {
+            result.fraction = fraction;
         }
+        if let Some(iterations) = builder.iterations {
+            result.iterations = iterations;
+        }
+        if let Some(delta) = builder.delta {
+            result.delta = Some(delta);
+        }
+        if let Some(wf) = builder.weight_function {
+            result.weight_function = wf;
+        }
+        if let Some(rm) = builder.robustness_method {
+            result.robustness_method = rm;
+        }
+        if let Some(it) = builder.interval_type {
+            result.interval_type = Some(it);
+        }
+        if let Some(cvf) = builder.cv_fractions {
+            result.cv_fractions = Some(cvf);
+        }
+        if let Some(cvk) = builder.cv_kind {
+            result.cv_kind = Some(cvk);
+        }
+        result.cv_seed = builder.cv_seed;
+        if let Some(ac) = builder.auto_convergence {
+            result.auto_convergence = Some(ac);
+        }
+        if let Some(zwf) = builder.zero_weight_fallback {
+            result.zero_weight_fallback = zwf;
+        }
+        if let Some(bp) = builder.boundary_policy {
+            result.boundary_policy = bp;
+        }
+
+        if let Some(rw) = builder.return_robustness_weights {
+            result.return_robustness_weights = rw;
+        }
+        if let Some(rd) = builder.return_diagnostics {
+            result.return_diagnostics = rd;
+        }
+        if let Some(cr) = builder.compute_residuals {
+            result.compute_residuals = cr;
+        }
+
+        // ======================================
+        // DEV
+        // ======================================
+        if let Some(sp) = builder.custom_smooth_pass {
+            result.custom_smooth_pass = Some(sp);
+        }
+        if let Some(cp) = builder.custom_cv_pass {
+            result.custom_cv_pass = Some(cp);
+        }
+        if let Some(ip) = builder.custom_interval_pass {
+            result.custom_interval_pass = Some(ip);
+        }
+        if let Some(b) = builder.backend {
+            result.backend = Some(b);
+        }
+        if let Some(p) = builder.parallel {
+            result.parallel = Some(p);
+        }
+
+        result.duplicate_param = builder.duplicate_param;
+
+        result
     }
 }
 
@@ -471,11 +568,38 @@ impl<T: Float> LowessAdapter<T> for Streaming {
             result.merge_strategy = ms;
         }
 
-        result.compute_residuals = builder.compute_residuals;
-        result.return_diagnostics = builder.return_diagnostics;
-        result.return_robustness_weights = builder.return_robustness_weights;
-        result.auto_convergence = builder.auto_convergence;
-        result.custom_smooth_pass = builder.custom_smooth_pass;
+        if let Some(rw) = builder.return_robustness_weights {
+            result.return_robustness_weights = rw;
+        }
+        if let Some(rd) = builder.return_diagnostics {
+            result.return_diagnostics = rd;
+        }
+        if let Some(cr) = builder.compute_residuals {
+            result.compute_residuals = cr;
+        }
+        if let Some(ac) = builder.auto_convergence {
+            result.auto_convergence = Some(ac);
+        }
+
+        // ======================================
+        // DEV
+        // ======================================
+
+        if let Some(sp) = builder.custom_smooth_pass {
+            result.custom_smooth_pass = Some(sp);
+        }
+        if let Some(cp) = builder.custom_cv_pass {
+            result.custom_cv_pass = Some(cp);
+        }
+        if let Some(ip) = builder.custom_interval_pass {
+            result.custom_interval_pass = Some(ip);
+        }
+        if let Some(b) = builder.backend {
+            result.backend = Some(b);
+        }
+        if let Some(p) = builder.parallel {
+            result.parallel = Some(p);
+        }
         result.duplicate_param = builder.duplicate_param;
 
         result
@@ -524,25 +648,37 @@ impl<T: Float> LowessAdapter<T> for Online {
             result.zero_weight_fallback = zwf;
         }
 
-        result.compute_residuals = builder.compute_residuals;
-        result.return_robustness_weights = builder.return_robustness_weights;
-        result.auto_convergence = builder.auto_convergence;
-        result.custom_smooth_pass = builder.custom_smooth_pass;
+        if let Some(cr) = builder.compute_residuals {
+            result.compute_residuals = cr;
+        }
+        if let Some(rw) = builder.return_robustness_weights {
+            result.return_robustness_weights = rw;
+        }
+        if let Some(ac) = builder.auto_convergence {
+            result.auto_convergence = Some(ac);
+        }
+
+        // ======================================
+        // DEV
+        // ======================================
+
+        if let Some(sp) = builder.custom_smooth_pass {
+            result.custom_smooth_pass = Some(sp);
+        }
+        if let Some(cp) = builder.custom_cv_pass {
+            result.custom_cv_pass = Some(cp);
+        }
+        if let Some(ip) = builder.custom_interval_pass {
+            result.custom_interval_pass = Some(ip);
+        }
+        if let Some(b) = builder.backend {
+            result.backend = Some(b);
+        }
+        if let Some(p) = builder.parallel {
+            result.parallel = Some(p);
+        }
         result.duplicate_param = builder.duplicate_param;
 
         result
     }
-}
-
-/// Strategy for dataset splitting during cross-validation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CrossValidationStrategy {
-    /// K-fold cross-validation (user-defined k folds).
-    KFold,
-
-    /// Leave-one-out cross-validation (n folds).
-    LeaveOneOut,
-
-    /// Alias for `LeaveOneOut`.
-    LOOCV,
 }

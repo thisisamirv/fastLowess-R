@@ -1,6 +1,8 @@
-//! # LOWESS — Locally Weighted Scatterplot Smoothing for Rust
+#![allow(non_snake_case)]
+#![deny(missing_docs)]
+//! # Fast LOWESS (Locally Weighted Scatterplot Smoothing)
 //!
-//! A production-ready, high-performance LOWESS implementation with comprehensive
+//! A production-ready, high-performance, multi-threaded, GPU-accelerated LOWESS implementation with comprehensive
 //! features for robust nonparametric regression and trend estimation.
 //!
 //! ## What is LOWESS?
@@ -17,6 +19,7 @@
 //! - Robust to outliers (with robustness iterations enabled)
 //! - Provides uncertainty estimates via confidence/prediction intervals
 //! - Handles irregular sampling and missing regions gracefully
+//! - Multi-threaded and GPU-accelerated features for high performance
 //!
 //! **Common applications:**
 //! - Exploratory data analysis and visualization
@@ -63,7 +66,7 @@
 //! let result = model.fit(&x, &y)?;
 //!
 //! println!("{}", result);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -92,25 +95,27 @@
 //!
 //! // Build model with all features enabled
 //! let model = Lowess::new()
-//!     .fraction(0.5)                                  // Use 50% of data for each local fit
-//!     .iterations(3)                                  // 3 robustness iterations
-//!     .weight_function(WeightFunction::Tricube)       // Kernel function
-//!     .robustness_method(RobustnessMethod::Bisquare)  // Outlier handling
-//!     .delta(0.01)                                    // Interpolation optimization
-//!     .zero_weight_fallback(ZeroWeightFallback::UseLocalMean)  // Fallback policy
-//!     .auto_converge(1e-6)                            // Auto-convergence threshold
-//!     .confidence_intervals(0.95)                     // 95% confidence intervals
-//!     .prediction_intervals(0.95)                     // 95% prediction intervals
-//!     .return_diagnostics()                           // Fit quality metrics
-//!     .return_residuals()                             // Include residuals
-//!     .return_robustness_weights()                    // Include robustness weights
-//!     .adapter(Batch)                                 // Batch adapter
-//!     .parallel(true)                                 // Enable parallel execution
+//!     .fraction(0.5)                                   // Use 50% of data for each local fit
+//!     .iterations(3)                                   // 3 robustness iterations
+//!     .weight_function(Tricube)                        // Kernel function
+//!     .robustness_method(Bisquare)                     // Outlier handling
+//!     .delta(0.01)                                     // Interpolation optimization
+//!     .zero_weight_fallback(UseLocalMean)              // Fallback policy
+//!     .auto_converge(1e-6)                             // Auto-convergence threshold
+//!     .confidence_intervals(0.95)                      // 95% confidence intervals
+//!     .prediction_intervals(0.95)                      // 95% prediction intervals
+//!     .return_diagnostics()                            // Fit quality metrics
+//!     .return_residuals()                              // Include residuals
+//!     .return_robustness_weights()                     // Include robustness weights
+//!     .cross_validate(KFold(5, &[0.3, 0.7]).seed(123)) // K-fold CV with 5 folds and 2 fraction options
+//!     .adapter(Batch)                                  // Batch adapter
+//!     .parallel(true)                                  // Enable parallel execution
+//!     .backend(CPU)                                    // Default to CPU backend, please read the docs for more information
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
 //! println!("{}", result);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -141,53 +146,49 @@
 //!     8.00    15.77990     0.408300    14.979631    16.580167    14.789441    16.770356    -0.079899     1.0000
 //! ```
 //!
-//! ## Minimal Usage (no_std / Embedded)
+//! ### Result and Error Handling
 //!
-//! The crate supports `no_std` environments for embedded devices and resource-constrained systems.
-//! Disable default features to remove the standard library dependency:
+//! The `fit` method returns a `Result<LowessResult<T>, LowessError>`.
 //!
-//! ```toml
-//! [dependencies]
-//! fastLowess = { version = "0.2", default-features = false }
-//! ```
+//! - **`Ok(LowessResult<T>)`**: Contains the smoothed data and diagnostics.
+//! - **`Err(LowessError)`**: Indicates a failure (e.g., mismatched input lengths, insufficient data).
 //!
-//! **Minimal example for embedded systems:**
+//! The `?` operator is idiomatic:
 //!
 //! ```rust
-//! # #[cfg(feature = "std")] {
 //! use fastLowess::prelude::*;
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//! # let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
 //!
-//! // In an embedded context (e.g., sensor data processing)
-//! fn smooth_sensor_data() -> Result<()> {
-//!     // Small dataset from sensor readings
-//!     let x = vec![1.0_f32, 2.0, 3.0, 4.0, 5.0];
-//!     let y = vec![2.1, 3.9, 6.2, 7.8, 10.1];
+//! let model = Lowess::new().adapter(Batch).build()?;
 //!
-//!     // Build minimal model (no intervals, no diagnostics)
-//!     let model = Lowess::new()
-//!         .fraction(0.5)
-//!         .iterations(2)      // Fewer iterations for speed
-//!         .adapter(Batch)
-//!         .build()?;
-//!
-//!     // Fit the model
-//!     let result = model.fit(&x, &y)?;
-//!
-//!     // Use smoothed values (result.y)
-//!     // ...
-//!
-//!     Ok(())
-//! }
-//! # smooth_sensor_data().unwrap();
-//! # }
+//! let result = model.fit(&x, &y)?;
+//! // or to be more explicit:
+//! // let result: LowessResult<f64> = model.fit(&x, &y)?;
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
-//! **Tips for embedded/no_std usage:**
-//! - Use `f32` instead of `f64` to reduce memory footprint
-//! - Keep datasets small (< 1000 points)
-//! - Disable optional features (intervals, diagnostics) to reduce code size
-//! - Use fewer iterations (1-2) to reduce computation time
-//! - Allocate buffers statically when possible to avoid heap fragmentation
+//! But you can also handle results explicitly:
+//!
+//! ```rust
+//! use fastLowess::prelude::*;
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//! # let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
+//!
+//! let model = Lowess::new().adapter(Batch).build()?;
+//!
+//! match model.fit(&x, &y) {
+//!     Ok(result) => {
+//!         // result is LowessResult<f64>
+//!         println!("Smoothed: {:?}", result.y);
+//!     }
+//!     Err(e) => {
+//!         // e is LowessError
+//!         eprintln!("Fitting failed: {}", e);
+//!     }
+//! }
+//! # Result::<(), LowessError>::Ok(())
+//! ```
 //!
 //! ## Parameters
 //!
@@ -209,7 +210,8 @@
 //! | **return_diagnostics**                     | false                                         | true/false           | Include RMSE, MAE, R^2, etc. in output           | Batch, Streaming |
 //! | **confidence_intervals**                   | None                                          | 0..1 (level)         | Uncertainty in mean curve                        | Batch            |
 //! | **prediction_intervals**                   | None                                          | 0..1 (level)         | Uncertainty for new observations                 | Batch            |
-//! | **cross_validate**                         | None                                          | Fractions + method   | Automated bandwidth selection                    | Batch            |
+//! | **cross_validate**                         | None                                          | Method (fractions)   | Automated bandwidth selection                    | Batch            |
+//! | **backend**                                | `CPU`                                         | 2 backends           | Execution backend (CPU/GPU)                      | Batch            |
 //! | **chunk_size**                             | 5000                                          | [10, ∞)              | Points per chunk for streaming                   | Streaming        |
 //! | **overlap**                                | 500                                           | [0, chunk_size)      | Overlapping points between chunks                | Streaming        |
 //! | **merge_strategy**                         | `Average`                                     | 4 strategies         | How to merge overlapping regions                 | Streaming        |
@@ -221,13 +223,14 @@
 //!
 //! For parameters with multiple options, here are the available choices:
 //!
-//! | Parameter                | Available Options                                                                                                                                                                                                                                                                      |
-//! |--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-//! | **weight_function**      | `Tricube`, `Epanechnikov`, `Gaussian`, `Biweight`, `Cosine`, `Triangle`, `Uniform`                                                                                                                                                                                                     |
-//! | **robustness_method**    | `Bisquare`, `Huber`, `Talwar`                                                                                                                                                                                                                                                          |
-//! | **zero_weight_fallback** | `UseLocalMean`, `ReturnOriginal`, `ReturnNone`                                                                                                                                                                                                                                         |
-//! | **boundary_policy**      | `Extend`, `Reflect`, `Zero`                                                                                                                                                                                                                                                            |
-//! | **update_mode**          | `Incremental`, `Full`                                                                                                                                                                                                                                                                  |
+//! | Parameter                | Available Options                                                                  |
+//! |--------------------------|------------------------------------------------------------------------------------|
+//! | **weight_function**      | `Tricube`, `Epanechnikov`, `Gaussian`, `Biweight`, `Cosine`, `Triangle`, `Uniform` |
+//! | **robustness_method**    | `Bisquare`, `Huber`, `Talwar`                                                      |
+//! | **zero_weight_fallback** | `UseLocalMean`, `ReturnOriginal`, `ReturnNone`                                     |
+//! | **boundary_policy**      | `Extend`, `Reflect`, `Zero`                                                        |
+//! | **update_mode**          | `Incremental`, `Full`                                                              |
+//! | **backend**              | `CPU`, `GPU` (currently limited)                                                   |
 //!
 //! See the detailed sections below for guidance on choosing between these options.
 //!
@@ -251,17 +254,17 @@
 //!
 //! // Build the model with custom configuration
 //! let model = Lowess::new()
-//!     .fraction(0.3)                                  // Smoothing span
-//!     .iterations(5)                                  // Robustness iterations
-//!     .weight_function(WeightFunction::Tricube)       // Kernel function
-//!     .robustness_method(RobustnessMethod::Bisquare)  // Outlier handling
+//!     .fraction(0.3)               // Smoothing span
+//!     .iterations(5)               // Robustness iterations
+//!     .weight_function(Tricube)    // Kernel function
+//!     .robustness_method(Bisquare) // Outlier handling
 //!     .adapter(Batch)
 //!     .build()?;
 //!
 //! // Fit the model to the data
 //! let result = model.fit(&x, &y)?;
 //! println!("{}", result);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -278,6 +281,42 @@
 //!     4.00     8.20000
 //!     5.00     9.80000
 //! ```
+//!
+//! ### Backend Comparison
+//!
+//! | Backend | Use Case         | Features              | Limitations         |
+//! |---------|------------------|-----------------------|---------------------|
+//! | CPU     | General          | All features          | None                |
+//! | GPU     | High-performance | Very fast             | Only vanilla LOWESS |
+//!
+//! **IMPORTANT:**
+//!
+//! The GPU backend is currently limited to vanilla LOWESS and does not support
+//! all features of the CPU backend. It means:
+//!
+//! - Only Tricube kernel function
+//! - Only Bisquare robustness method
+//! - Only Batch adapter
+//! - No cross-validation
+//! - No intervals
+//! - No delta
+//! - No edge handling => bias at edges (original LOWESS)
+//! - No zero-weight fallback
+//! - No diagnostics
+//! - No streaming or online mode
+//!
+//! On the other hand, the GPU backend does not rely on any intermediate CPU-GPU
+//! data transfers during robustness iterations, thus eliminating synchronization
+//! overhead. This backend is only recommended for very large datasets, where the
+//! performance is the main priority, and bias at the edges or other features are
+//! not a concern.
+//!
+//! NOTE: The results from the GPU backend are not guaranteed to be identical to
+//! the results from the CPU backend due to:
+//!
+//! - Different floating-point precision
+//! - No padding at the edges in the GPU backend
+//! - Different scale estimation methods (MAD in CPU, MAR in GPU)
 //!
 //! ### Execution Mode (Adapter) Comparison
 //!
@@ -315,7 +354,7 @@
 //!
 //! let result = model.fit(&x, &y)?;
 //! println!("{}", result);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -382,7 +421,7 @@
 //! // Total processed = all chunks + finalize
 //! let total = result1.y.len() + result2.y.len() + final_result.y.len();
 //! println!("Processed {} points total", total);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Use streaming when:**
@@ -414,7 +453,7 @@
 //!         println!("Latest smoothed value: {:.2}", result.smoothed);
 //!     }
 //! }
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Use online when:**
@@ -450,7 +489,7 @@
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Choosing fraction:**
@@ -487,7 +526,7 @@
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Choosing iterations:**
@@ -517,7 +556,7 @@
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **When to use delta:**
@@ -546,7 +585,7 @@
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Performance:**
@@ -574,7 +613,7 @@
 //!
 //! // result.y is an Array1<f64>
 //! let smoothed_values = result.y;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Benefits:**
@@ -595,12 +634,12 @@
 //! // Build model with Epanechnikov kernel
 //! let model = Lowess::new()
 //!     .fraction(0.5)
-//!     .weight_function(WeightFunction::Epanechnikov)
+//!     .weight_function(Epanechnikov)
 //!     .adapter(Batch)
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Kernel selection guide:**
@@ -668,7 +707,7 @@
 //! let model = Lowess::new()
 //!     .fraction(0.5)
 //!     .iterations(3)
-//!     .robustness_method(RobustnessMethod::Talwar)
+//!     .robustness_method(Talwar)
 //!     .return_robustness_weights()  // Include weights in output
 //!     .adapter(Batch)
 //!     .build()?;
@@ -684,7 +723,7 @@
 //!         }
 //!     }
 //! }
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -711,12 +750,12 @@
 //! // Build model with custom zero-weight fallback
 //! let model = Lowess::new()
 //!     .fraction(0.5)
-//!     .zero_weight_fallback(ZeroWeightFallback::UseLocalMean)
+//!     .zero_weight_fallback(UseLocalMean)
 //!     .adapter(Batch)
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Fallback options:**
@@ -744,7 +783,7 @@
 //! if let Some(residuals) = result.residuals {
 //!     println!("Residuals: {:?}", residuals);
 //! }
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ### Boundary Policy
@@ -764,12 +803,12 @@
 //! // Use reflective padding for better edge handling
 //! let model = Lowess::new()
 //!     .fraction(0.5)
-//!     .boundary_policy(BoundaryPolicy::Reflect)
+//!     .boundary_policy(Reflect)
 //!     .adapter(Batch)
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Choosing a policy:**
@@ -798,25 +837,16 @@
 //!
 //! // Fit the model to the data
 //! let result = model.fit(&x, &y)?;
-//!
-//! println!("Converged after {} iterations", result.iterations_used.unwrap());
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
-//!
-//! ```text
-//! Converged after 1 iterations
-//! ```
-//!
 //! ### Return Robustness Weights
 //!
 //! Include final robustness weights in the output.
 //!
 //! ```rust
 //! use fastLowess::prelude::*;
-//! use ndarray::Array1;
-//!
-//! let x = Array1::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
-//! let y = Array1::from_vec(vec![2.0, 4.1, 5.9, 8.2, 9.8]);
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//! # let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
 //!
 //! let model = Lowess::new()
 //!     .fraction(0.5)
@@ -830,7 +860,7 @@
 //! if let Some(weights) = result.robustness_weights {
 //!     println!("Robustness weights: {:?}", weights);
 //! }
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ### Diagnostics (Batch and Streaming)
@@ -839,10 +869,8 @@
 //!
 //! ```rust
 //! use fastLowess::prelude::*;
-//! use ndarray::Array1;
-//!
-//! let x = Array1::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
-//! let y = Array1::from_vec(vec![2.0, 4.1, 5.9, 8.2, 9.8]);
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//! # let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
 //!
 //! // Build model with diagnostics
 //! let model = Lowess::new()
@@ -860,13 +888,13 @@
 //!     println!("MAE: {:.4}", diag.mae);
 //!     println!("R²: {:.4}", diag.r_squared);
 //! }
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
 //! RMSE: 0.1234
 //! MAE: 0.0987
-//! R²: 0.9876
+//! R^2: 0.9876
 //! ```
 //!
 //! **Available diagnostics:**
@@ -882,10 +910,8 @@
 //!
 //! ```rust
 //! use fastLowess::prelude::*;
-//! use ndarray::Array1;
-//!
-//! let x = Array1::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
-//! let y = Array1::from_vec(vec![2.0, 4.1, 5.9, 8.2, 9.8]);
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+//! # let y = vec![2.0, 4.1, 5.9, 8.2, 9.8];
 //!
 //! // Build model with confidence intervals
 //! let model = Lowess::new()
@@ -907,7 +933,7 @@
 //!         result.confidence_upper.as_ref().unwrap()[i]
 //!     );
 //! }
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -924,10 +950,8 @@
 //!
 //! ```rust
 //! use fastLowess::prelude::*;
-//! use ndarray::Array1;
-//!
-//! let x = Array1::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
-//! let y = Array1::from_vec(vec![2.1, 3.8, 6.2, 7.9, 10.3, 11.8, 14.1, 15.7]);
+//! # let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+//! # let y = vec![2.1, 3.8, 6.2, 7.9, 10.3, 11.8, 14.1, 15.7];
 //!
 //! // Build model with both interval types
 //! let model = Lowess::new()
@@ -940,7 +964,7 @@
 //! // Fit the model to the data
 //! let result = model.fit(&x, &y)?;
 //! println!("{}", result);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -975,18 +999,12 @@
 //!
 //! ```rust
 //! use fastLowess::prelude::*;
-//! use ndarray::Array1;
-//!
-//! let x = Array1::from_iter((1..=20).map(|i| i as f64));
-//! let y = x.map(|&xi| 2.0 * xi + 1.0);
+//! # let x: Vec<f64> = (1..=20).map(|i| i as f64).collect();
+//! # let y: Vec<f64> = x.iter().map(|&xi| 2.0 * xi + 1.0).collect();
 //!
 //! // Build model with K-fold cross-validation
 //! let model = Lowess::new()
-//!     .cross_validate(
-//!         &[0.2, 0.3, 0.5, 0.7],           // Candidate fractions to test
-//!         CrossValidationStrategy::KFold,   // K-fold CV
-//!         Some(5)                           // 5 folds
-//!     )
+//!     .cross_validate(KFold(5, &[0.2, 0.3, 0.5, 0.7]).seed(42)) // K-fold CV with 5 folds and 4 fraction options
 //!     .adapter(Batch)
 //!     .build()?;
 //!
@@ -995,7 +1013,7 @@
 //!
 //! println!("Selected fraction: {}", result.fraction_used);
 //! println!("CV scores: {:?}", result.cv_scores);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -1005,24 +1023,18 @@
 //!
 //! ```rust
 //! use fastLowess::prelude::*;
-//! use ndarray::Array1;
-//!
-//! let x = Array1::from_iter((1..=20).map(|i| i as f64));
-//! let y = x.map(|&xi| 2.0 * xi + 1.0);
+//! # let x: Vec<f64> = (1..=20).map(|i| i as f64).collect();
+//! # let y: Vec<f64> = x.iter().map(|&xi| 2.0 * xi + 1.0).collect();
 //!
 //! // Build model with leave-one-out cross-validation
 //! let model = Lowess::new()
-//!     .cross_validate(
-//!         &[0.2, 0.3, 0.5, 0.7],
-//!         CrossValidationStrategy::LOOCV,  // Leave-one-out
-//!         None                             // k parameter not used for LOOCV
-//!     )
+//!     .cross_validate(LOOCV(&[0.2, 0.3, 0.5, 0.7])) // Leave-one-out CV with 4 fraction options
 //!     .adapter(Batch)
 //!     .build()?;
 //!
 //! let result = model.fit(&x, &y)?;
 //! println!("{}", result);
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
@@ -1039,9 +1051,15 @@
 //!   ... (17 more rows)
 //! ```
 //!
-//! **CV strategies:**
-//! - `KFold`: Faster, good for large datasets
-//! - `LOOCV` (Leave-one-out): More accurate, expensive for large datasets
+//! **Choosing a Method:**
+//!
+//! * **K-Fold**: Good balance between accuracy and speed. Common choices:
+//!   - k=5: Fast, reasonable accuracy
+//!   - k=10: Standard choice, good accuracy
+//!   - k=20: Higher accuracy, slower
+//!
+//! * **LOOCV**: Maximum accuracy but computationally expensive (O(n^2) evaluations).
+//!   Best for small datasets (n < 100) where accuracy is critical.
 //!
 //! ### Chunk Size (Streaming Adapter)
 //!
@@ -1056,7 +1074,7 @@
 //!     .chunk_size(10000)  // Process 10K points at a time
 //!     .overlap(1000)      // 1K point overlap
 //!     .build()?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Typical values:**
@@ -1087,10 +1105,10 @@
 //!
 //! let mut processor = Lowess::new()
 //!     .fraction(0.3)
-//!     .merge_strategy(MergeStrategy::WeightedAverage)
+//!     .merge_strategy(WeightedAverage)
 //!     .adapter(Streaming)
 //!     .build()?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ### Window Capacity (Online Adapter)
@@ -1105,7 +1123,7 @@
 //!     .adapter(Online)
 //!     .window_capacity(500)  // Keep last 500 points
 //!     .build()?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! **Typical values:**
@@ -1128,7 +1146,7 @@
 //!     .window_capacity(100)
 //!     .min_points(10)  // Wait for 10 points before smoothing
 //!     .build()?;
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ### Update Mode (Online Adapter)
@@ -1146,7 +1164,7 @@
 //!     .fraction(0.3)
 //!     .adapter(Online)
 //!     .window_capacity(100)
-//!     .update_mode(UpdateMode::Incremental)
+//!     .update_mode(Incremental)
 //!     .build()?;
 //!
 //! for i in 0..1000 {
@@ -1156,31 +1174,32 @@
 //!         println!("Smoothed: {}", output.smoothed);
 //!     }
 //! }
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
-//! ### Custom Smooth Pass Function
+//! ### Custom Pass Functions
 //!
-//! Advanced users can provide custom smoothing functions via `custom_smooth_pass`.
+//! Advanced users can provide custom execution functions via `custom_smooth_pass`,
+//! `custom_cv_pass`, `custom_interval_pass`, and `custom_fit_pass`.
 //!
-//! This allows replacing the default smoothing algorithm with custom implementations for:
-//! - Parallel execution strategies
-//! - Custom regression models
-//! - Specialized optimizations
+//! This allows replacing the default algorithms with custom implementations for:
+//! - Parallel execution strategies (leveraging external crates like `rayon`)
+//! - GPU acceleration (via the `backend` field and `FitPassFn`)
+//! - Custom regression models or statistical validations
+//! - Specialized hardware optimizations
 //!
-//! See the `SmoothPassFn` type documentation for the function signature and requirements.
-//! This is an advanced feature mainly for library developers.
-//!
+//! See the `SmoothPassFn`, `CVPassFn`, `IntervalPassFn`, and `FitPassFn` type
+//! documentation for function signatures. These are advanced features mainly
+//! for library developers and specialized integration.
 //!
 //! ## A comprehensive example showing multiple features:
 //!
 //! ```rust
 //! use fastLowess::prelude::*;
-//! use ndarray::Array1;
 //!
 //! // Generate sample data with outliers
-//! let x = Array1::from_iter((1..=50).map(|i| i as f64));
-//! let mut y = x.map(|&xi| 2.0 * xi + 1.0 + (xi * 0.5).sin() * 5.0);
+//! let x: Vec<f64> = (1..=50).map(|i| i as f64).collect();
+//! let mut y: Vec<f64> = x.iter().map(|&xi| 2.0 * xi + 1.0 + (xi * 0.5).sin() * 5.0).collect();
 //! y[10] = 100.0;  // Add an outlier
 //! y[25] = -50.0;  // Add another outlier
 //!
@@ -1188,16 +1207,15 @@
 //! let model = Lowess::new()
 //!     .fraction(0.3)                                  // Moderate smoothing
 //!     .iterations(5)                                  // Strong outlier resistance
-//!     .weight_function(WeightFunction::Tricube)       // Default kernel
-//!     .robustness_method(RobustnessMethod::Bisquare)  // Bisquare robustness
+//!     .weight_function(Tricube)                       // Default kernel
+//!     .robustness_method(Bisquare)                    // Bisquare robustness
 //!     .confidence_intervals(0.95)                     // 95% confidence intervals
 //!     .prediction_intervals(0.95)                     // 95% prediction intervals
 //!     .return_diagnostics()                           // Include diagnostics
 //!     .return_residuals()                             // Include residuals
 //!     .return_robustness_weights()                    // Include robustness weights
-//!     .zero_weight_fallback(ZeroWeightFallback::UseLocalMean)
+//!     .zero_weight_fallback(UseLocalMean)             // Fallback policy
 //!     .adapter(Batch)
-//!     .parallel(true)                                 // Multi-threaded smoothing
 //!     .build()?;
 //!
 //! // Fit the model to the data
@@ -1236,14 +1254,14 @@
 //!         result.prediction_upper.as_ref().unwrap()[i]
 //!     );
 //! }
-//! # Ok::<(), LowessError>(())
+//! # Result::<(), LowessError>::Ok(())
 //! ```
 //!
 //! ```text
 //! Smoothed 50 points
 //! Fit quality:
 //!   RMSE: 0.5234
-//!   R²: 0.9987
+//!   R^2: 0.9987
 //!
 //! Outliers detected:
 //!   Point 10: y=100.0, weight=0.000
@@ -1266,16 +1284,25 @@
 //!
 //! See the repository for license information and contribution guidelines.
 
-#![allow(non_snake_case)]
-#![deny(missing_docs)]
-
 // ============================================================================
 // Internal Modules
 // ============================================================================
 
-// Layer 5: Engine - Parallel execution engine.
+// Layer 4: Evaluation - post-processing and diagnostics.
 //
-// Contains `LowessExecutor` with rayon-based parallel smoothing.
+// Contains cross-validation for parameter selection, diagnostic metrics
+// (RMSE, R^2, AIC), and confidence/prediction interval computation.
+#[cfg(feature = "gpu")]
+/// GPU-accelerated execution engine.
+pub mod gpu {
+    pub use crate::engine::gpu::fit_pass_gpu;
+}
+mod evaluation;
+
+// Layer 5: Engine - orchestration and execution control.
+//
+// Contains the core smoothing iteration logic, automatic convergence
+// detection, and result assembly.
 mod engine;
 
 // Layer 6: Adapters - execution mode adapters.
@@ -1289,43 +1316,43 @@ mod adapters;
 // Provides the `Lowess` builder for configuring and running LOWESS smoothing.
 mod api;
 
-// Input abstraction for ndarray/slice compatibility.
+// Input data handling.
+//
+// Contains the `LowessInput` struct for ndarray input data.
 mod input;
-
-// ============================================================================
-// Public Re-exports
-// ============================================================================
-
-pub use crate::api::{
-    Adapter, BoundaryPolicy, CrossValidationStrategy, LowessBuilder as Lowess, LowessError,
-    LowessResult, MergeStrategy, Result, RobustnessMethod, UpdateMode, WeightFunction,
-    ZeroWeightFallback,
-};
 
 // ============================================================================
 // Prelude
 // ============================================================================
 
 /// Standard fastLowess prelude.
-///
-/// This module is intended to be wildcard-imported for convenient access
-/// to the most commonly used types:
-///
-/// ```
-/// use fastLowess::prelude::*;
-/// ```
-///
-/// This imports:
-/// - `Lowess` - The main builder
-/// - `Batch`, `Streaming`, `Online` - Adapter markers
-/// - `LowessResult`, `LowessError`, `Result` - Result types
-/// - All enum types (RobustnessMethod, WeightFunction, etc.)
 pub mod prelude {
     pub use crate::api::{
         Adapter::{Batch, Online, Streaming},
-        BoundaryPolicy, CrossValidationStrategy, LowessBuilder as Lowess, LowessError,
-        LowessResult, MergeStrategy, Result, RobustnessMethod, UpdateMode, WeightFunction,
-        ZeroWeightFallback,
+        Backend::CPU,
+        Backend::GPU,
+        BoundaryPolicy::Extend,
+        BoundaryPolicy::Reflect,
+        BoundaryPolicy::Zero,
+        KFold, LOOCV, LowessBuilder as Lowess, LowessError, LowessResult,
+        MergeStrategy::Average,
+        MergeStrategy::TakeFirst,
+        MergeStrategy::WeightedAverage,
+        RobustnessMethod::Bisquare,
+        RobustnessMethod::Huber,
+        RobustnessMethod::Talwar,
+        UpdateMode::Full,
+        UpdateMode::Incremental,
+        WeightFunction::Biweight,
+        WeightFunction::Cosine,
+        WeightFunction::Epanechnikov,
+        WeightFunction::Gaussian,
+        WeightFunction::Triangle,
+        WeightFunction::Tricube,
+        WeightFunction::Uniform,
+        ZeroWeightFallback::ReturnNone,
+        ZeroWeightFallback::ReturnOriginal,
+        ZeroWeightFallback::UseLocalMean,
     };
 }
 
@@ -1345,6 +1372,10 @@ pub mod internals {
     /// Internal execution engine.
     pub mod engine {
         pub use crate::engine::*;
+    }
+    /// Internal evaluation and diagnostics.
+    pub mod evaluation {
+        pub use crate::evaluation::*;
     }
     /// Internal adapters.
     pub mod adapters {

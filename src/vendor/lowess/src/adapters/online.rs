@@ -4,100 +4,56 @@
 //!
 //! This module provides the online (incremental) execution adapter for LOWESS
 //! smoothing. It maintains a sliding window of recent observations and produces
-//! smoothed values for new points as they arrive, making it suitable for
-//! real-time data streams and incremental updates where data arrives
-//! sequentially.
+//! smoothed values for new points as they arrive.
 //!
 //! ## Design notes
 //!
-//! * Uses a fixed-size circular buffer (VecDeque) for the sliding window.
-//! * Automatically evicts oldest points when capacity is reached.
-//! * Performs full LOWESS smoothing on the current window for each new point.
-//! * Supports basic smoothing and residuals only (no intervals or diagnostics).
-//! * Requires minimum number of points before smoothing begins.
-//! * Generic over `Float` types to support f32 and f64.
+//! * **Storage**: Uses a fixed-size circular buffer (VecDeque) for the sliding window.
+//! * **Eviction**: Automatically evicts oldest points when capacity is reached.
+//! * **Processing**: Performs smoothing on the current window for each new point.
+//! * **Generics**: Generic over `Float` types.
 //!
 //! ## Key concepts
 //!
-//! ### Sliding Window
-//! The online adapter maintains a fixed-size window:
-//! ```text
-//! Initial state (capacity=5):
-//! Buffer: [_, _, _, _, _]
-//!
-//! After 3 points:
-//! Buffer: [x1, x2, x3, _, _]
-//!
-//! After 7 points (buffer full, oldest dropped):
-//! Buffer: [x3, x4, x5, x6, x7]
-//!         ↑ oldest    newest ↑
-//! ```
-//!
-//! ### Incremental Processing
-//! For each new point:
-//! 1. Validate the point (finite values)
-//! 2. Add to window (evict oldest if at capacity)
-//! 3. Check if minimum points threshold is met
-//! 4. Perform LOWESS smoothing on current window
-//! 5. Return smoothed value for the newest point
-//!
-//! ### Update Modes
-//! * **Incremental**: Basic incremental updates (currently performs full re-smooth)
-//! * **Full**: Full re-smooth of the current window (O(window^2))
-//!
-//! ### Initialization Phase
-//! Before `min_points` are accumulated, `add_point()` returns `None`.
-//! Once enough points are available, smoothing begins.
-//!
-//! ## Supported features
-//!
-//! * **Robustness iterations**: Downweight outliers iteratively
-//! * **Residuals**: Differences between original and smoothed values
-//! * **Window snapshots**: Get full `LowessResult` for current window
-//! * **Reset capability**: Clear window for handling data gaps
+//! * **Sliding Window**: Maintains recent history up to `capacity`.
+//! * **Incremental Processing**: Validates, adds, evicts, and smooths.
+//! * **Initialization Phase**: Returns `None` until `min_points` are accumulated.
+//! * **Update Modes**: Supports `Incremental` (fast) and `Full` (accurate) modes.
 //!
 //! ## Invariants
 //!
 //! * Window size never exceeds capacity.
-//! * All values in window are finite (no NaN or infinity).
+//! * All values in window are finite.
 //! * At least `min_points` are required before smoothing.
 //! * Window maintains insertion order (oldest to newest).
-//! * Smoothing is performed on sorted window data.
 //!
 //! ## Non-goals
 //!
 //! * This adapter does not support confidence/prediction intervals.
 //! * This adapter does not compute diagnostic statistics.
 //! * This adapter does not support cross-validation.
-//! * This adapter does not handle batch processing (use batch adapter).
 //! * This adapter does not handle out-of-order points.
-//!
-//! ## Visibility
-//!
-//! The online adapter is part of the public API through the high-level
-//! `Lowess` builder. Direct usage of `OnlineLowess` is possible but not
-//! the primary interface.
 
-#[cfg(not(feature = "std"))]
-extern crate alloc;
-
+// Feature-gated imports
 #[cfg(not(feature = "std"))]
 use alloc::{collections::VecDeque, vec::Vec};
-
 #[cfg(feature = "std")]
 use std::{collections::VecDeque, vec::Vec};
 
+// External dependencies
+use core::fmt::Debug;
+use num_traits::Float;
+
+// Internal dependencies
 use crate::algorithms::regression::{LinearRegression, ZeroWeightFallback};
 use crate::algorithms::robustness::RobustnessMethod;
-use crate::engine::executor::{LowessConfig, LowessExecutor, SmoothPassFn};
+use crate::engine::executor::{CVPassFn, FitPassFn, IntervalPassFn, SmoothPassFn};
+use crate::engine::executor::{LowessConfig, LowessExecutor};
 use crate::engine::validator::Validator;
 use crate::math::kernel::WeightFunction;
+use crate::primitives::backend::Backend;
 use crate::primitives::errors::LowessError;
 use crate::primitives::partition::{BoundaryPolicy, UpdateMode};
-
-use core::fmt::Debug;
-use core::result::Result;
-use num_traits::Float;
 
 // ============================================================================
 // Online LOWESS Builder
@@ -148,10 +104,35 @@ pub struct OnlineLowessBuilder<T: Float> {
     /// Deferred error from adapter conversion
     pub deferred_error: Option<LowessError>,
 
-    /// Optional custom smoothing function (e.g., for parallel execution)
+    // ++++++++++++++++++++++++++++++++++++++
+    // +               DEV                  +
+    // ++++++++++++++++++++++++++++++++++++++
+    /// Custom smooth pass function.
+    #[doc(hidden)]
     pub custom_smooth_pass: Option<SmoothPassFn<T>>,
 
+    /// Custom cross-validation pass function.
+    #[doc(hidden)]
+    pub custom_cv_pass: Option<CVPassFn<T>>,
+
+    /// Custom interval estimation pass function.
+    #[doc(hidden)]
+    pub custom_interval_pass: Option<IntervalPassFn<T>>,
+
+    /// Custom fit pass function.
+    #[doc(hidden)]
+    pub custom_fit_pass: Option<FitPassFn<T>>,
+
+    /// Execution backend hint.
+    #[doc(hidden)]
+    pub backend: Option<Backend>,
+
+    /// Parallel execution hint.
+    #[doc(hidden)]
+    pub parallel: Option<bool>,
+
     /// Tracks if any parameter was set multiple times (for validation)
+    #[doc(hidden)]
     pub(crate) duplicate_param: Option<&'static str>,
 }
 
@@ -180,6 +161,11 @@ impl<T: Float> OnlineLowessBuilder<T> {
             auto_convergence: None,
             deferred_error: None,
             custom_smooth_pass: None,
+            custom_cv_pass: None,
+            custom_interval_pass: None,
+            custom_fit_pass: None,
+            backend: None,
+            parallel: None,
             duplicate_param: None,
         }
     }
@@ -270,6 +256,45 @@ impl<T: Float> OnlineLowessBuilder<T> {
         self
     }
 
+    // ++++++++++++++++++++++++++++++++++++++
+    // +               DEV                  +
+    // ++++++++++++++++++++++++++++++++++++++
+
+    /// Set a custom smooth pass function.
+    #[doc(hidden)]
+    pub fn custom_smooth_pass(mut self, pass: SmoothPassFn<T>) -> Self {
+        self.custom_smooth_pass = Some(pass);
+        self
+    }
+
+    /// Set a custom cross-validation pass function.
+    #[doc(hidden)]
+    pub fn custom_cv_pass(mut self, pass: CVPassFn<T>) -> Self {
+        self.custom_cv_pass = Some(pass);
+        self
+    }
+
+    /// Set a custom interval estimation pass function.
+    #[doc(hidden)]
+    pub fn custom_interval_pass(mut self, pass: IntervalPassFn<T>) -> Self {
+        self.custom_interval_pass = Some(pass);
+        self
+    }
+
+    /// Set the execution backend hint.
+    #[doc(hidden)]
+    pub fn backend(mut self, backend: Backend) -> Self {
+        self.backend = Some(backend);
+        self
+    }
+
+    /// Set parallel execution hint.
+    #[doc(hidden)]
+    pub fn parallel(mut self, parallel: bool) -> Self {
+        self.parallel = Some(parallel);
+        self
+    }
+
     // ========================================================================
     // Build Method
     // ========================================================================
@@ -298,6 +323,8 @@ impl<T: Float> OnlineLowessBuilder<T> {
             config: self,
             window_x: VecDeque::with_capacity(capacity),
             window_y: VecDeque::with_capacity(capacity),
+            scratch_x: Vec::with_capacity(capacity),
+            scratch_y: Vec::with_capacity(capacity),
         })
     }
 }
@@ -331,24 +358,18 @@ pub struct OnlineLowess<T: Float> {
     config: OnlineLowessBuilder<T>,
     window_x: VecDeque<T>,
     window_y: VecDeque<T>,
+    /// Pre-allocated scratch buffer for x values during smoothing
+    scratch_x: Vec<T>,
+    /// Pre-allocated scratch buffer for y values during smoothing
+    scratch_y: Vec<T>,
 }
 
 impl<T: Float + Debug + Send + Sync + 'static> OnlineLowess<T> {
     /// Add a new point and get its smoothed value.
     pub fn add_point(&mut self, x: T, y: T) -> Result<Option<OnlineOutput<T>>, LowessError> {
         // Validate new point
-        if !x.is_finite() {
-            return Err(LowessError::InvalidNumericValue(format!(
-                "x={}",
-                x.to_f64().unwrap_or(f64::NAN)
-            )));
-        }
-        if !y.is_finite() {
-            return Err(LowessError::InvalidNumericValue(format!(
-                "y={}",
-                y.to_f64().unwrap_or(f64::NAN)
-            )));
-        }
+        Validator::validate_scalar(x, "x")?;
+        Validator::validate_scalar(y, "y")?;
 
         // Add to window
         self.window_x.push_back(x);
@@ -365,9 +386,14 @@ impl<T: Float + Debug + Send + Sync + 'static> OnlineLowess<T> {
             return Ok(None);
         }
 
-        // Convert window to vectors for smoothing
-        let x_vec: Vec<T> = self.window_x.iter().copied().collect();
-        let y_vec: Vec<T> = self.window_y.iter().copied().collect();
+        // Convert window to vectors for smoothing using scratch buffers
+        self.scratch_x.clear();
+        self.scratch_y.clear();
+        self.scratch_x.extend(self.window_x.iter().copied());
+        self.scratch_y.extend(self.window_y.iter().copied());
+
+        let x_vec = &self.scratch_x;
+        let y_vec = &self.scratch_y;
 
         // Special case: exactly two points, use exact linear fit
         if x_vec.len() == 2 {
@@ -414,8 +440,8 @@ impl<T: Float + Debug + Send + Sync + 'static> OnlineLowess<T> {
                 let robustness_weights = vec![T::one(); n];
 
                 let (smoothed_val, _) = LowessExecutor::fit_single_point(
-                    &x_vec,
-                    &y_vec,
+                    x_vec,
+                    y_vec,
                     n - 1, // Latest point
                     window_size,
                     false, // No robustness for single point
@@ -438,14 +464,23 @@ impl<T: Float + Debug + Send + Sync + 'static> OnlineLowess<T> {
                     robustness_method: self.config.robustness_method,
                     zero_weight_fallback: zero_flag,
                     boundary_policy: self.config.boundary_policy,
-                    custom_smooth_pass: self.config.custom_smooth_pass,
                     auto_convergence: self.config.auto_convergence,
                     cv_fractions: None,
-                    cv_method: None,
+                    cv_kind: None,
                     return_variance: None,
+                    cv_seed: None,
+                    // ++++++++++++++++++++++++++++++++++++++
+                    // +               DEV                  +
+                    // ++++++++++++++++++++++++++++++++++++++
+                    custom_smooth_pass: self.config.custom_smooth_pass,
+                    custom_cv_pass: self.config.custom_cv_pass,
+                    custom_interval_pass: self.config.custom_interval_pass,
+                    custom_fit_pass: self.config.custom_fit_pass,
+                    parallel: self.config.parallel.unwrap_or(false),
+                    backend: self.config.backend,
                 };
 
-                let result = LowessExecutor::run_with_config(&x_vec, &y_vec, config.clone());
+                let result = LowessExecutor::run_with_config(x_vec, y_vec, config.clone());
                 let smoothed_vec = result.smoothed;
                 let se_vec = result.std_errors;
 

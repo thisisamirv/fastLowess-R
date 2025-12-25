@@ -4,85 +4,48 @@
 //!
 //! This module provides the core fitting algorithm for LOWESS: local weighted
 //! linear regression. At each point, a linear model is fit using nearby points
-//! with weights determined by a kernel function. This is the heart of the
-//! LOWESS smoothing process.
+//! with weights determined by a kernel function.
 //!
 //! ## Design notes
 //!
-//! * Uses weighted least squares (WLS) for local linear regression.
-//! * Weights are computed from kernel functions (tricube, Epanechnikov, etc.).
-//! * Optionally combines kernel weights with robustness weights for outlier resistance.
-//! * Implements zero-weight fallback policies for numerical stability.
-//! * All fitting operations are pure functions with explicit parameters (no hidden state).
-//! * Generic over `Float` types to support f32 and f64.
+//! * **Algorithm**: Uses weighted least squares (WLS) for local linear regression.
+//! * **Weights**: Computed from kernel functions, combined with robustness weights.
+//! * **Fallback**: Implements policies for handling zero-weight or degenerate cases.
+//! * **Generics**: Generic over `Float` types.
 //!
 //! ## Key concepts
 //!
-//! ### Local Weighted Regression
-//! For each point x_i:
-//! 1. Define neighborhood window (nearest k points)
-//! 2. Compute window radius (max distance to window boundary)
-//! 3. Compute kernel weights: w_j = K(|x_j - x_i| / h)
-//! 4. Optionally combine with robustness weights: w_j ← w_j × r_j
-//! 5. Fit weighted linear model: y_hat = beta_0 + beta_1 * (x - x_mean)
-//! 6. Evaluate at x_i to get smoothed value
-//!
-//! ### Weighted Least Squares
-//! Minimizes the weighted sum of squared residuals:
-//! ```text
-//! min sum(w_j * (y_j - (beta_0 + beta_1 * x_j))^2)
-//! ```
-//!
-//! Solution:
-//! ```text
-//! beta_1 = sum(w_j * (x_j - x_mean) * (y_j - y_mean)) / sum(w_j * (x_j - x_mean)^2)
-//! beta_0 = y_mean - beta_1 * x_mean
-//! ```
-//!
-//! where x_mean and y_mean are weighted means.
-//!
-//! ### Robustness Weights
-//! In iterative robustness refinement, points with large residuals receive
-//! lower weights. These robustness weights are multiplied with kernel weights
-//! to downweight outliers.
-//!
-//! ### Zero-Weight Fallback
-//! When all weights are zero (e.g., very small window radius or all robustness
-//! weights zero), fallback policies determine the behavior:
-//! - Use local mean (default)
-//! - Return original value
-//! - Return None (propagate failure)
+//! * **Local Weighted Regression**: Fits a linear model `y = beta_0 + beta_1 * x` locally.
+//! * **Weighted Least Squares**: Minimizes weighted sum of squared residuals.
+//! * **Robustness Weights**: Downweights outliers (multiplied with kernel weights).
+//! * **Zero-Weight Fallback**: Handles numerical stability issues (e.g., use local mean).
 //!
 //! ## Invariants
 //!
-//! * Window radius must be positive for meaningful regression.
-//! * Weights are normalized to sum to 1 before fitting.
-//! * Fitted values are always finite (no NaN or infinity).
-//! * Window indices are always within array bounds.
+//! * Window radius must be positive.
+//! * Weights are normalized for internal WLS calculations.
+//! * Fitted values are always finite.
 //!
 //! ## Non-goals
 //!
 //! * This module does not compute the windows (done by window module).
 //! * This module does not compute robustness weights (done by robustness module).
 //! * This module does not perform higher-degree polynomial regression.
-//! * This module does not validate input data for sorting or duplicates.
-//!
-//! ## Visibility
-//!
-//! The [`Regression`] trait and [`LinearRegression`] struct are part of the
-//! internal API used by the LOWESS engine. The [`RegressionContext`] struct
-//! encapsulates all parameters for fitting. These may change without notice.
+//! * This module does not validate input data.
 
-use crate::primitives::window::Window;
-use core::fmt;
-use num_traits::Float;
-
-#[cfg(not(feature = "std"))]
-extern crate alloc;
+// Feature-gated imports
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::vec::Vec;
 
+// External dependencies
+use core::fmt::Debug;
+use num_traits::Float;
+
+// Internal dependencies
 use crate::math::kernel::WeightFunction;
+use crate::primitives::window::Window;
 
 // ============================================================================
 // Regression Context
@@ -210,14 +173,14 @@ impl<T: Float> Regression<T> for LinearRegression {
             context.weights,
         );
 
-        // Apply robustness weights if needed
+        // Apply robustness weights if needed and compute final sum
         if context.use_robustness {
-            // Re-calculate sum after applying robustness weights
             weight_sum = T::zero();
             for j in context.window.left..=rightmost_idx {
-                if context.weights[j] > T::zero() {
+                let w_k = context.weights[j];
+                if w_k > T::zero() {
                     let w_robust = context.robustness_weights[j];
-                    let w_final = context.weights[j] * w_robust;
+                    let w_final = w_k * w_robust;
                     context.weights[j] = w_final;
                     weight_sum = weight_sum + w_final;
                 }
@@ -228,12 +191,8 @@ impl<T: Float> Regression<T> for LinearRegression {
             // Handle zero-weight case according to fallback policy
             match context.zero_weight_fallback {
                 ZeroWeightFallback::UseLocalMean => {
-                    let window_size = context
-                        .window
-                        .right
-                        .saturating_sub(context.window.left)
-                        .saturating_add(1);
-                    let cnt = T::from(window_size as f64).unwrap_or(T::one());
+                    let window_size = context.window.right - context.window.left + 1;
+                    let cnt = T::from(window_size).unwrap_or(T::one());
                     let mean = context.y[context.window.left..=context.window.right]
                         .iter()
                         .copied()
@@ -250,18 +209,9 @@ impl<T: Float> Regression<T> for LinearRegression {
             }
         }
 
-        // Normalize weights to sum to 1
-        debug_assert!(
-            weight_sum > T::zero(),
-            "normalize_range: sum must be positive"
-        );
-        let inv_sum = T::one() / weight_sum;
-        for j in context.window.left..=rightmost_idx {
-            context.weights[j] = context.weights[j] * inv_sum;
-        }
-
         // Perform weighted least squares regression
-        Some(GLSModel::local_wls(
+        // We pass the weight_sum to avoid re-summing it inside GLSModel::fit_wls
+        Some(GLSModel::local_wls_with_sum(
             context.x,
             context.y,
             context.weights,
@@ -269,6 +219,7 @@ impl<T: Float> Regression<T> for LinearRegression {
             rightmost_idx,
             x_current,
             window_radius,
+            weight_sum,
         ))
     }
 }
@@ -344,14 +295,11 @@ pub struct WeightParams<T: Float> {
     /// Far-threshold: points farther than this get weight 0.0.
     /// Internal optimization: 0.999 × radius.
     pub h9: T,
-
-    /// Whether to use robustness weights
-    pub use_robustness: bool,
 }
 
 impl<T: Float> WeightParams<T> {
     /// Construct WeightParams with validated window radius.
-    pub fn new(x_current: T, window_radius: T, use_robustness: bool) -> Self {
+    pub fn new(x_current: T, window_radius: T, _use_robustness: bool) -> Self {
         debug_assert!(
             window_radius > T::zero(),
             "WeightParams::new: window_radius must be positive"
@@ -373,7 +321,6 @@ impl<T: Float> WeightParams<T> {
             window_radius: radius,
             h1,
             h9,
-            use_robustness,
         }
     }
 }
@@ -407,7 +354,7 @@ impl<T: Float> GLSModel<T> {
     /// Fit Ordinary Least Squares (OLS) regression.
     fn fit_ols(x: &[T], y: &[T]) -> Self
     where
-        T: fmt::Debug,
+        T: Debug,
     {
         let n = x.len();
         if n == 0 {
@@ -467,16 +414,16 @@ impl<T: Float> GLSModel<T> {
     /// Compute global OLS linear fit for the full dataset.
     pub fn global_ols(x: &[T], y: &[T]) -> Vec<T>
     where
-        T: fmt::Debug,
+        T: Debug,
     {
         let model = Self::fit_ols(x, y);
         x.iter().map(|&xi| model.predict(xi)).collect()
     }
 
     /// Fit Weighted Least Squares (WLS) regression.
-    fn fit_wls(x: &[T], y: &[T], weights: &[T], window_radius: T) -> GLSModel<T> {
+    fn fit_wls(x: &[T], y: &[T], weights: &[T], window_radius: T, sum_w: T) -> GLSModel<T> {
         let n = x.len();
-        if n == 0 {
+        if n == 0 || sum_w <= T::zero() {
             return GLSModel {
                 slope: T::zero(),
                 intercept: T::zero(),
@@ -486,23 +433,12 @@ impl<T: Float> GLSModel<T> {
         }
 
         // Compute weighted means
-        let mut sum_w = T::zero();
         let mut x_mean = T::zero();
         let mut y_mean = T::zero();
         for i in 0..n {
             let w = weights[i];
-            sum_w = sum_w + w;
             x_mean = x_mean + w * x[i];
             y_mean = y_mean + w * y[i];
-        }
-
-        if sum_w <= T::zero() {
-            return GLSModel {
-                slope: T::zero(),
-                intercept: T::zero(),
-                x_mean: T::zero(),
-                y_mean: T::zero(),
-            };
         }
 
         x_mean = x_mean / sum_w;
@@ -555,8 +491,9 @@ impl<T: Float> GLSModel<T> {
         }
     }
 
-    /// Weighted linear regression evaluated at a specific point.
-    pub fn local_wls(
+    /// Weighted linear regression evaluated at a specific point with precomputed weight sum.
+    #[allow(clippy::too_many_arguments)]
+    pub fn local_wls_with_sum(
         x: &[T],
         y: &[T],
         weights: &[T],
@@ -564,12 +501,13 @@ impl<T: Float> GLSModel<T> {
         right: usize,
         x_current: T,
         window_radius: T,
+        sum_w: T,
     ) -> T {
         let window_x = &x[left..=right];
         let window_y = &y[left..=right];
         let window_weights = &weights[left..=right];
 
-        let model = Self::fit_wls(window_x, window_y, window_weights, window_radius);
+        let model = Self::fit_wls(window_x, window_y, window_weights, window_radius, sum_w);
         model.predict(x_current)
     }
 }

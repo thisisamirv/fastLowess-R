@@ -2,68 +2,42 @@
 //!
 //! ## Purpose
 //!
-//! This module provides utilities for optimizing LOWESS performance through
+//! This module provides utilities for optimized LOWESS performance through
 //! delta-based point skipping and linear interpolation. When data points are
 //! densely sampled, fitting every point is computationally expensive and
-//! often unnecessary. This module implements the "delta optimization" that
-//! fits anchor points and interpolates between them.
+//! often unnecessary.
 //!
 //! ## Design notes
 //!
-//! * Delta controls the distance threshold for point skipping during fitting.
-//! * Points closer than delta may be interpolated rather than explicitly fitted.
-//! * Uses linear interpolation to fill gaps between fitted anchor points.
-//! * Handles tied x-values (duplicates) by copying fitted values.
-//! * Delta defaults to 1% of the x-range in `calculate_delta`.
-//!   (Note: specific adapters like Streaming may default to 0.0 unless configured).
-//! * All operations are generic over `Float` types to support f32 and f64.
+//! * **Optimization**: Delta controls the distance threshold for skipping.
+//! * **Interpolation**: Uses linear interpolation to fill gaps between fitted anchors.
+//! * **Defaults**: Calculate conservative default delta (1% of range) if needed.
+//! * **Generics**: Generic over `Float` types.
 //!
 //! ## Key concepts
 //!
-//! ### Delta Optimization
-//! Instead of fitting every point, the algorithm:
-//! 1. Selects "anchor" points spaced at least delta apart
-//! 2. Explicitly fits these anchor points
-//! 3. Linearly interpolates between anchors for intermediate points
-//!
-//! This provides significant speedup on dense data with minimal accuracy loss.
-//!
-//! ### Linear Interpolation
-//! For points between two fitted anchors at (x₀, y₀) and (x₁, y₁), the
-//! interpolated value at x is:
-//! ```text
-//! y = y_0 + alpha * (y_1 - y_0)  where  alpha = (x - x_0) / (x_1 - x_0)
-//! ```
-//!
-//! ### Tied Values
-//! When multiple points have identical x-values, they all receive the same
-//! fitted value (the value computed for that x-coordinate).
+//! * **Delta Optimization**: Fits anchor points spaced at least `delta` apart.
+//! * **Linear Interpolation**: Fills gaps: y = y_0 + alpha * (y_1 - y_0).
+//! * **Tied Values**: Tied x-values receive the same fitted value.
 //!
 //! ## Invariants
 //!
 //! * Input x-values must be sorted in ascending order.
 //! * Delta must be non-negative and finite.
-//! * Interpolation preserves monotonicity between anchor points.
-//! * At least one point is always fitted (no infinite loops).
+//! * At least one point is always fitted.
 //!
 //! ## Non-goals
 //!
 //! * This module does not perform the actual smoothing/fitting.
 //! * This module does not sort the input data.
-//! * This module does not provide higher-order interpolation (only linear).
-//! * This module does not validate that x-values are sorted.
-//!
-//! ## Visibility
-//!
-//! This module is an internal implementation detail used by the LOWESS
-//! engine. It is not part of the public API and may change without notice.
+//! * This module does not provide higher-order interpolation.
 
-#[cfg(not(feature = "std"))]
-extern crate alloc;
-
-use crate::primitives::errors::LowessError;
+// External dependencies
 use core::result::Result;
 use num_traits::Float;
+
+// Internal dependencies
+use crate::primitives::errors::LowessError;
 
 // ============================================================================
 // Delta Calculation
@@ -79,13 +53,7 @@ use num_traits::Float;
 /// ```
 pub fn calculate_delta<T: Float>(delta: Option<T>, x_sorted: &[T]) -> Result<T, LowessError> {
     match delta {
-        Some(d) => {
-            // Validate provided delta
-            if !d.is_finite() || d < T::zero() {
-                return Err(LowessError::InvalidDelta(d.to_f64().unwrap_or(f64::NAN)));
-            }
-            Ok(d)
-        }
+        Some(d) => Ok(d),
         None => {
             // Compute default delta as 1% of x-range
             if x_sorted.is_empty() {
@@ -125,18 +93,13 @@ pub fn interpolate_gap<T: Float>(x: &[T], y_smooth: &mut [T], last_fitted: usize
     if denom <= T::zero() {
         // Duplicate or decreasing x-values: use simple average
         let avg = (y0 + y1) / T::from(2.0).unwrap();
-        y_smooth
-            .iter_mut()
-            .take(current)
-            .skip(last_fitted + 1)
-            .for_each(|ys| *ys = avg);
+        y_smooth[(last_fitted + 1)..current].fill(avg);
         return;
     }
 
-    // Linear interpolation
+    // Linear interpolation: y = y0 + (xi - x0) * slope
+    let slope = (y1 - y0) / denom;
     for k in (last_fitted + 1)..current {
-        let xi = x[k];
-        let alpha = (xi - x0) / denom;
-        y_smooth[k] = y0 + alpha * (y1 - y0);
+        y_smooth[k] = y0 + (x[k] - x0) * slope;
     }
 }

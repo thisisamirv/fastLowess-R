@@ -2,85 +2,47 @@
 //!
 //! ## Purpose
 //!
-//! This module provides tools for quantifying uncertainty in LOWESS smoothed
-//! values through standard error estimation, confidence intervals, and
-//! prediction intervals. These allow users to assess the reliability of
-//! fitted values and make probabilistic predictions.
+//! This module provides tools for quantifying uncertainty in LOWESS smoothing
+//! through standard errors, confidence intervals, and prediction intervals.
 //!
 //! ## Design notes
 //!
-//! * Standard errors are computed using local leverage and weighted residuals.
-//! * Confidence intervals quantify uncertainty in the fitted curve (mean).
-//! * Prediction intervals quantify uncertainty for new observations.
-//! * Uses MAD (Median Absolute Deviation) for robust scale estimation.
-//! * Z-scores are approximated using Acklam's inverse normal CDF algorithm.
-//! * All computations are generic over `Float` types to support f32 and f64.
-//!
-//! ## Available interval types
-//!
-//! * **Standard errors**: Local variance estimates for each smoothed point
-//! * **Confidence intervals**: Uncertainty in the fitted curve (mean function)
-//! * **Prediction intervals**: Uncertainty for new observations (includes residual variance)
+//! * **Methodology**: Uses local leverage and robust weighted residuals.
+//! * **Approximation**: Z-scores estimated via Acklam's inverse normal CDF.
+//! * **Flexibility**: Configurable coverage levels and interval types.
 //!
 //! ## Key concepts
 //!
-//! ### Standard Errors (SE)
-//!
-//! Standard errors reflect the uncertainty in the fitted value y_hat_i
-//! due to sampling variability. They are computed from local leverage and
-//! the residual variance within the regression window.
-//!
-//! ### Confidence Intervals (CI)
-//!
-//! Confidence intervals quantify uncertainty in the estimated mean function:
-//! CI = y_hat +/- z * SE
-//! where z is the critical value for the specified probability.
-//!
-//! ### Prediction Intervals (PI)
-//!
-//! Prediction intervals quantify uncertainty for new, unobserved data points:
-//! PI = y_hat +/- z * sqrt(SE^2 + sigma^2)
-//! where sigma is the robustly estimated residual standard deviation.
-//!
-//! ### Leverage
-//!
-//! ### Leverage
-//!
-//! Measures the influence of an observation on its own fitted value. Approximated
-//! as the ratio of local weight to the sum of weights: l_ii approx w_i / sum w_j.
-//!
-//! ### Z-Score Approximation
-//!
-//! Critical values are computed via the inverse standard normal CDF (Phi^-1(p))
-//! using Acklam's algorithm, which provides high precision across the entire range.
+//! * **Standard Errors (SE)**: Uncertainty in fitted values due to sampling.
+//! * **Confidence Intervals (CI)**: Uncertainty in the estimated mean curve.
+//! * **Prediction Intervals (PI)**: Uncertainty for new observations (wider than CI).
+//! * **Leverage**: Influence of an observation on its own fitted value.
 //!
 //! ## Invariants
 //!
 //! * Confidence levels must satisfy 0 < level < 1.
-//! * Prediction intervals are always wider than confidence intervals for sigma > 0.
-//! * Standard errors and interval widths are non-negative and finite.
+//! * Prediction intervals are always wider than confidence intervals.
+//! * Standard errors are non-negative.
 //!
 //! ## Non-goals
 //!
 //! * This module does not perform the smoothing or iterative refinement.
 //! * This module does not provide bootstrap or simulation-based intervals.
-//! * This module does not handle simultaneous confidence bands (Working-Hotelling).
-//!
-//! ## Visibility
-//!
-//! The [`IntervalMethod`] struct is part of the public API, allowing users
-//! to configure which intervals to compute. Internal implementation details
-//! may change without notice.
+//! * This module does not handle simultaneous confidence bands.
 
-#[cfg(not(feature = "std"))]
-extern crate alloc;
+// Feature-gated imports
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::vec::Vec;
 
+// External dependencies
+use num_traits::Float;
+
+// Internal dependencies
 use crate::math::mad::compute_mad;
 use crate::primitives::errors::LowessError;
 use crate::primitives::window::Window;
-use num_traits::Float;
 
 // ============================================================================
 // Interval Configuration
@@ -178,17 +140,14 @@ impl<T: Float> IntervalMethod<T> {
     /// sigma_hat = 1.4826 * MAD(residuals).
     fn calculate_residual_sd(residuals: &[T]) -> T {
         let n = residuals.len();
-        if n == 0 {
-            return T::zero();
-        }
-
         let scale_const = T::from(Self::MAD_TO_STD_FACTOR).unwrap();
 
         if n == 1 {
             return residuals[0].abs() * scale_const;
         }
 
-        let mad = compute_mad(residuals);
+        let mut vals = residuals.to_vec();
+        let mad = compute_mad(&mut vals);
         if mad > T::zero() {
             mad * scale_const
         } else {
@@ -206,7 +165,7 @@ impl<T: Float> IntervalMethod<T> {
     /// SE = sqrt(sigma_local^2 * l_ii), where
     /// sigma_local^2 = (sum w_k r_k^2) / ((sum w_k) - 2) and
     /// l_ii = w_i / sum w_k.
-    fn compute_se(sum_w: T, sum_w_r2: T, w_idx: T) -> T {
+    pub fn compute_se(sum_w: T, sum_w_r2: T, w_idx: T) -> T {
         // Effective degrees of freedom for weighted regression
         if sum_w <= T::zero() {
             return T::zero();
@@ -429,10 +388,6 @@ impl<T: Float> IntervalMethod<T> {
     /// z = Phi^-1((1 + p) / 2) where Phi^-1 is the inverse standard normal CDF.
     pub fn approximate_z_score(confidence_level: T) -> Result<T, &'static str> {
         let cl_f = confidence_level.to_f64().unwrap_or(0.95);
-
-        if !(cl_f > 0.0 && cl_f < 1.0) {
-            return Err("confidence_level must be in (0, 1) (exclusive)");
-        }
 
         // Convert confidence level to cumulative probability
         let p = (1.0 + cl_f) / 2.0;

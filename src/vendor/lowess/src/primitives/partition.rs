@@ -11,15 +11,20 @@
 //! * **Trait Implementation**: All types implement `Debug`, `Clone`, `Copy`, `PartialEq`, and `Eq`.
 //! * **Re-exported**: Accessible via the crate root and the `api` module.
 //!
+//! ## Key concepts
+//!
+//! 1. **Boundary Handling**: Extended, Reflected, or Zero padding.
+//! 2. **Merging**: Averaging or selecting values for overlapping chunks.
+//! 3. **Incremental Updates**: Full or incremental window processing.
+//!
 //! ## Invariants
 //!
 //! * Defaults represent the most robust and widely applicable settings.
 //! * Policies are validated at builder construction or adapter initialization.
 //!
-//! ## Visibility
+//! ## Non-goals
 //!
-//! All types ([`BoundaryPolicy`], [`MergeStrategy`], [`UpdateMode`]) are part of the public API.
-//!
+//! * This module does not implement the partitioning logic itself (handled by `adapters`).
 
 /// Policy for handling boundaries at the start and end of a data stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

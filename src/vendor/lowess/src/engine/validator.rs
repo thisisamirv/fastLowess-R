@@ -3,81 +3,41 @@
 //! ## Purpose
 //!
 //! This module provides comprehensive validation functions for LOWESS
-//! configuration parameters and input data. It ensures that all inputs
-//! meet the requirements for successful smoothing before any computation
-//! begins, providing clear error messages when validation fails.
+//! configuration parameters and input data. It checks requirements
+//! such as input lengths, finite values, and parameter bounds.
 //!
 //! ## Design notes
 //!
-//! * All validation is performed upfront before smoothing begins.
-//! * Validation is fail-fast: returns on first error encountered.
-//! * Error messages include specific values and context for debugging.
-//! * Validation is generic over `Float` types to support f32 and f64.
-//! * Checks are ordered from cheap to expensive for efficiency.
-//! * Uses cache-friendly combined loops where possible.
-//!
-//! ## Validated parameters
-//!
-//! * **Input data**: Non-empty, matching lengths, sufficient points, all finite
-//! * **Fraction**: In (0, 1] and finite
-//! * **Delta**: Non-negative and finite
-//! * **Interval level**: In (0, 1) and finite
-//! * **CV fractions**: Non-empty, all in (0, 1], all finite
-//! * **Auto-convergence tolerance**: Positive and finite
-//! * **Chunk size**: Meets minimum requirements (streaming)
-//! * **Overlap**: Less than chunk size (streaming)
-//! * **Window capacity**: Meets minimum requirements (online)
-//! * **Min points**: At least 2 and at most window capacity (online)
+//! * **Fail-Fast**: Validation stops at the first error encountered.
+//! * **Efficiency**: Checks are ordered from cheap to expensive.
+//! * **Generics**: Validation is generic over `Float` types.
 //!
 //! ## Key concepts
 //!
-//! ### Fail-Fast Validation
-//!
-//! Validation stops at the first error encountered, returning immediately
-//! with a descriptive [`LowessError`]. This avoids unnecessary allocations
-//! and computation while providing quick feedback.
-//!
-//! ### Finite Value Checks
-//!
-//! All floating-point values (inputs and parameters) must be finite (not NaN
-//! or infinity). This prevents numerical instability and ensures that result
-//! metrics remain meaningful.
-//!
-//! ### Regression Requirements
-//!
-//! LOWESS requires at least 2 points to perform a local linear regression.
-//! Additional constraints are enforced for specific use cases (e.g., minimum
-//! points for online smoothing or overlap bounds for streaming).
-//!
-//! ### Parameter Bounds
-//!
-//! * **Fraction**: Must be in (0, 1] to ensure non-empty windows.
-//! * **Delta**: Must be >= 0 for optimization.
-//! * **Tolerance**: Must be > 0 for convergence checking.
+//! * **Parameter Bounds**: Enforces constraints like fraction in (0, 1].
+//! * **Finite Checks**: Ensures all inputs are finite (no NaN/Inf).
+//! * **Regression Requirements**: Ensures at least 2 points for linear regression.
 //!
 //! ## Invariants
 //!
 //! * All validated inputs satisfy their respective mathematical constraints.
 //! * Validation logic is deterministic and side-effect free.
-//! * Error messages are context-aware and include problematic values.
 //!
 //! ## Non-goals
 //!
 //! * This module does not sort, transform, or filter input data.
 //! * This module does not provide automatic correction of invalid inputs.
 //! * This module does not perform the smoothing or optimization itself.
-//!
-//! ## Visibility
-//!
-//! This module is an internal implementation detail used by the LOWESS
-//! builder and adapters. It is not part of the public API and may change
-//! without notice.
 
+// Feature-gated imports
 #[cfg(not(feature = "std"))]
 use alloc::format;
 
-use crate::primitives::errors::LowessError;
+// External dependencies
 use num_traits::Float;
+
+// Internal dependencies
+use crate::primitives::errors::LowessError;
 
 // ============================================================================
 // Validator
@@ -137,6 +97,18 @@ impl Validator {
         Ok(())
     }
 
+    /// Validate a single numeric value for finiteness.
+    pub fn validate_scalar<T: Float>(val: T, name: &str) -> Result<(), LowessError> {
+        if !val.is_finite() {
+            return Err(LowessError::InvalidNumericValue(format!(
+                "{}={}",
+                name,
+                val.to_f64().unwrap_or(f64::NAN)
+            )));
+        }
+        Ok(())
+    }
+
     // ========================================================================
     // Parameter Validation
     // ========================================================================
@@ -192,11 +164,20 @@ impl Validator {
         }
 
         for &f in fracs {
-            if !f.is_finite() || f <= T::zero() || f > T::one() {
-                return Err(LowessError::InvalidFraction(f.to_f64().unwrap_or(0.0)));
-            }
+            Self::validate_fraction(f)?;
         }
 
+        Ok(())
+    }
+
+    /// Validate the number of folds for k-fold cross-validation.
+    pub fn validate_kfold(k: usize) -> Result<(), LowessError> {
+        if k < 2 {
+            return Err(LowessError::InvalidNumericValue(format!(
+                "k-fold must be at least 2, got {}",
+                k
+            )));
+        }
         Ok(())
     }
 

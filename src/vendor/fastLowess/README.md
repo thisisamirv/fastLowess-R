@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/License-AGPL--3.0%20OR%20Commercial-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
-**High-performance parallel LOWESS (Locally Weighted Scatterplot Smoothing) for Rust** — A high-level wrapper around the [`lowess`](https://github.com/thisisamirv/lowess) crate that adds rayon-based parallelism and seamless ndarray integration.
+**High-performance parallel and GPU-accelerated LOWESS (Locally Weighted Scatterplot Smoothing) for Rust** — A high-level wrapper around the [`lowess`](https://github.com/thisisamirv/lowess) crate that adds rayon-based parallelism, GPU acceleration, and seamless ndarray integration.
 
 > [!IMPORTANT]
 > For a minimal, single-threaded, and `no_std` version, use base [`lowess`](https://github.com/thisisamirv/lowess).
@@ -45,46 +45,69 @@ sigma = 1.4826 * MAD
 
 ## Performance Advantages
 
-Benchmarked against Python's `statsmodels`. Achieves **50-3800× faster performance** across different tested scenarios. The parallel implementation ensures that even at extreme scales (100k points), processing remains sub-20ms.
+Benchmarked against Python's `statsmodels`. Achieves **91-3914× faster performance** across all tested scenarios. The parallel implementation ensures that even at extreme scales (100k points), processing remains sub-12ms.
 
 ### Summary
 
+The `fastLowess` crate demonstrates massive performance gains over Python's `statsmodels`, ranging from **136x to over 4300x** speedup. The addition of **parallel execution** (via Rayon) and optimized algorithm defaults makes it exceptionally well-suited for high-throughput data processing and large-scale datasets.
+
+### Category Comparison
+
 | Category         | Matched | Median Speedup | Mean Speedup |
-| :--------------- | :------ | :------------- | :----------- |
-| **Scalability**  | 5       | **765x**       | 1433x        |
-| **Pathological** | 4       | **448x**       | 416x         |
-| **Iterations**   | 6       | **436x**       | 440x         |
-| **Fraction**     | 6       | **424x**       | 413x         |
-| **Financial**    | 4       | **336x**       | 385x         |
-| **Scientific**   | 4       | **327x**       | 366x         |
-| **Genomic**      | 4       | **20x**        | 25x          |
-| **Delta**        | 4       | **4x**         | 5.5x         |
+|------------------|---------|----------------|--------------|
+| **Scalability**  | 5       | **954×**       | 1637×        |
+| **Fraction**     | 6       | **571×**       | 552×         |
+| **Iterations**   | 6       | **564×**       | 567×         |
+| **Pathological** | 4       | **551×**       | 538×         |
+| **Financial**    | 4       | **385×**       | 448×         |
+| **Scientific**   | 4       | **381×**       | 450×         |
+| **Genomic**      | 4       | **23×**        | 27×          |
+| **Delta**        | 4       | **5.7×**       | 7.8×         |
 
-### Top 10 Performance Wins
+### Top 10 Rust Wins
 
-| Benchmark          | statsmodels | fastLowess | Speedup   |
-| :----------------- | :---------- | :--------- | :-------- |
-| scale_100000       | 43.727s     | 11.4ms     | **3824x** |
-| scale_50000        | 11.160s     | 5.95ms     | **1876x** |
-| scale_10000        | 663.1ms     | 0.87ms     | **765x**  |
-| financial_10000    | 497.1ms     | 0.66ms     | **748x**  |
-| scientific_10000   | 777.2ms     | 1.07ms     | **729x**  |
-| fraction_0.05      | 197.2ms     | 0.37ms     | **534x**  |
-| scale_5000         | 229.9ms     | 0.44ms     | **523x**  |
-| fraction_0.1       | 227.9ms     | 0.45ms     | **512x**  |
-| financial_5000     | 170.9ms     | 0.34ms     | **497x**  |
-| scientific_5000    | 268.5ms     | 0.55ms     | **489x**  |
-
-Check [Benchmarks](https://github.com/thisisamirv/fastLowess/tree/bench/benchmarks) for detailed comparisons.
+| Benchmark        | statsmodels | fastLowess | Speedup   |
+|------------------|-------------|------------|-----------|
+| scale_100000     | 43.73s      | 10.1ms     | **4339×** |
+| scale_50000      | 11.16s      | 5.26ms     | **2122×** |
+| scale_10000      | 663.1ms     | 0.70ms     | **954×**  |
+| scientific_10000 | 777.2ms     | 0.83ms     | **941×**  |
+| financial_10000  | 497.1ms     | 0.56ms     | **885×**  |
+| iterations_0     | 74.2ms      | 0.12ms     | **599×**  |
+| financial_5000   | 170.9ms     | 0.29ms     | **595×**  |
+| scientific_5000  | 268.5ms     | 0.45ms     | **593×**  |
+| fraction_0.2     | 297.0ms     | 0.50ms     | **591×**  |
+| scale_5000       | 229.9ms     | 0.39ms     | **590×**  |
 
 ## Installation
 
-Add this to your `Cargo.toml`:
+### CPU Backend (Default)
+
+The default installation includes rayon-based parallelism and ndarray support:
 
 ```toml
 [dependencies]
-fastLowess = "0.2"
+fastLowess = "0.3"
 ```
+
+Or explicitly enable the `cpu` feature:
+
+```toml
+[dependencies]
+fastLowess = { version = "0.3", features = ["cpu"] }
+```
+
+### GPU Backend
+
+For GPU acceleration using `wgpu`, enable the `gpu` feature:
+
+```toml
+[dependencies]
+fastLowess = { version = "0.3", features = ["gpu"] }
+```
+
+> [!NOTE]
+> The GPU backend requires compatible GPU hardware and drivers. See the [Backend Comparison](#backend-comparison) section below for feature limitations.
 
 ## Quick Start
 
@@ -126,16 +149,16 @@ Lowess::new()
     .delta(0.01)
 
     // Kernel selection
-    .weight_function(WeightFunction::Tricube)
+    .weight_function(Tricube)
 
     // Robustness method
-    .robustness_method(RobustnessMethod::Bisquare)
+    .robustness_method(Bisquare)
 
     // Zero-weight fallback behavior
-    .zero_weight_fallback(ZeroWeightFallback::UseLocalMean)
+    .zero_weight_fallback(UseLocalMean)
 
     // Boundary handling (for edge effects)
-    .boundary_policy(BoundaryPolicy::Extend)
+    .boundary_policy(Extend)
 
     // Confidence intervals
     .confidence_intervals(0.95)
@@ -149,14 +172,16 @@ Lowess::new()
     .return_robustness_weights()
 
     // Cross-validation (for parameter selection)
-    .cross_validate(&[0.3, 0.5, 0.7], CrossValidationStrategy::KFold, Some(5))
+    .cross_validate(KFold(5).with_fractions(&[0.3, 0.5, 0.7]).seed(123))
 
     // Convergence
     .auto_converge(1e-4)
-    .max_iterations(20)
 
     // Execution mode
     .adapter(Batch)
+
+    // Backend (CPU or GPU)
+    .backend(CPU)
 
     // Parallelism
     .parallel(true)
@@ -164,6 +189,37 @@ Lowess::new()
     // Build the model
     .build()?;
 ```
+
+### Backend Comparison
+
+| Backend    | Use Case         | Features              | Limitations         |
+|------------|------------------|-----------------------|---------------------|
+| CPU        | General          | All features          | None                |
+| GPU (beta) | High-performance | Special circumstances | Only vanilla LOWESS |
+
+> [!WARNING]
+> **GPU Backend Limitations**: The GPU backend is currently in **Beta** and is limited to vanilla LOWESS and does not support all features of the CPU backend:
+>
+> - Only Tricube kernel function
+> - Only Bisquare robustness method
+> - Only Batch adapter
+> - No cross-validation
+> - No intervals
+> - No edge handling (bias at edges, original LOWESS behavior)
+> - No zero-weight fallback
+> - No diagnostics
+> - No streaming or online mode
+
+1. **CPU Backend (`Backend::CPU`)**: The default and recommended choice. It is faster for all standard dense computations, supports all features (cross-validation, intervals, etc.), and has zero setup overhead.
+
+2. **GPU Backend (`Backend::GPU`)**: Use **only** if you have a massive dataset (> 250,000 points) **AND** you are using the `delta` optimization (e.g., `delta(0.01)`). In this specific "sparse" scenario, the GPU scales better than the CPU. for dense computation, the CPU is still faster.
+
+> [!NOTE]
+> **GPU vs CPU Precision**: Results from the GPU backend are not guaranteed to be identical to the CPU backend due to:
+>
+> - Different floating-point precision
+> - No padding at the edges in the GPU backend
+> - Different scale estimation methods (MAD in CPU, MAR in GPU)
 
 ## Result Structure
 

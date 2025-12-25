@@ -25,10 +25,13 @@
 //! * Window indices always remain within the caller-provided array bounds.
 //! * The window correctly captures the q nearest neighbors for a given target point.
 //!
-//! ## Visibility
 //!
-//! This module is an internal detail used by the execution engine.
+//! ## Non-goals
+//!
+//! * This module does not handle data sorting (handled by `sorting` module).
+//! * This module does not perform the regression itself (handled by `regression` module).
 
+// External dependencies
 use num_traits::Float;
 
 /// Inclusive window bounds `[left, right]` for a local fit.
@@ -42,37 +45,12 @@ pub struct Window {
 }
 
 impl Window {
-    /// Create a new window if `left <= right`.
-    #[inline]
-    pub fn new(left: usize, right: usize) -> Option<Self> {
-        if left <= right {
-            Some(Self { left, right })
-        } else {
-            None
-        }
-    }
-
-    /// Returns the number of points in the window.
-    #[inline]
-    pub fn len(&self) -> usize {
-        if self.left <= self.right {
-            self.right - self.left + 1
-        } else {
-            0
-        }
-    }
-
-    /// Returns `true` if the window contains no points.
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
     // ========================================================================
     // Window Management
     // ========================================================================
 
     /// Initialize window boundaries for the first point in a sequence.
+    #[inline]
     pub fn initialize(idx: usize, window_size: usize, n: usize) -> Self {
         debug_assert!(
             window_size >= 1,
@@ -98,12 +76,9 @@ impl Window {
     }
 
     /// Update boundaries to maintain nearest-neighbor centering.
+    #[inline]
     pub fn recenter<T: Float>(&mut self, x: &[T], current: usize, n: usize) {
         debug_assert!(current < n, "recenter: current index out of bounds");
-
-        if current >= n || n == 0 {
-            return;
-        }
 
         self.left = self.left.min(n - 1);
         self.right = self.right.min(n - 1);
@@ -111,6 +86,7 @@ impl Window {
         let x_current = x[current];
 
         // Search for the optimal window position (nearest neighbors)
+        // Slide right: if the point after the window is closer than the leftmost point
         while self.right < n - 1 {
             let d_left = x_current - x[self.left];
             let d_right = x[self.right + 1] - x_current;
@@ -122,6 +98,19 @@ impl Window {
             self.left += 1;
             self.right += 1;
         }
+
+        // Slide left: if the point before the window is closer or as close as the rightmost point
+        while self.left > 0 {
+            let d_left = x_current - x[self.left - 1];
+            let d_right = x[self.right] - x_current;
+
+            if d_right <= d_left {
+                break;
+            }
+
+            self.left -= 1;
+            self.right -= 1;
+        }
     }
 
     // ========================================================================
@@ -129,6 +118,7 @@ impl Window {
     // ========================================================================
 
     /// Compute the maximum distance from `x_current` to any point in the window.
+    #[inline]
     pub fn max_distance<T: Float>(&self, x: &[T], x_current: T) -> T {
         T::max(x_current - x[self.left], x[self.right] - x_current)
     }

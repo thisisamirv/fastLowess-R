@@ -19,12 +19,16 @@ git clone https://github.com/thisisamirv/fastLowess-R.git
 cd fastLowess-R
 git checkout -b feature/your-feature
 
-# Common commands
-make doc          # Generate documentation (roxygen2)
-make build        # Build and install the package
-make test         # Run the demonstration scripts
-make check        # Run all checks (formatters, linters, tests, R CMD check)
+# Run all checks (the main command you need)
+make check
 ```
+
+### Common Makefile Commands
+
+| Command      | Description                                                                |
+|--------------|----------------------------------------------------------------------------|
+| `make check` | Run all checks (fmt, clippy, vendor-update, build, test, doc, R CMD check) |
+| `make clean` | Clean all build artifacts                                                  |
 
 ### Prerequisites
 
@@ -66,8 +70,9 @@ This command automates re-vendoring and cleans up checksums for CRAN portability
 
 ## Testing
 
-Verification is performed via demonstration scripts and the standard `R CMD check`:
+Verification is performed via Rust tests, demonstration scripts, and the standard `R CMD check`:
 
+- `make test-rust`: Runs Rust unit tests.
 - `demo/*.R`: Functional tests for batch, online, and streaming smoothing.
 - `R CMD check`: Verified via `make check-CMD` or `devtools::check()`.
 

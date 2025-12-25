@@ -2,98 +2,62 @@
 //!
 //! ## Purpose
 //!
-//! This module provides the batch (standard) execution adapter for LOWESS
-//! smoothing. It handles complete datasets in memory with sequential processing,
-//! making it suitable for small to medium-sized datasets where all data is
-//! available upfront. The batch adapter is the simplest and most straightforward
-//! way to use LOWESS.
+//! This module provides the batch execution adapter for LOWESS smoothing.
+//! It handles complete datasets in memory with sequential processing, making
+//! it suitable for small to medium-sized datasets.
 //!
 //! ## Design notes
 //!
-//! * Processes entire dataset in a single pass.
-//! * Automatically sorts data by x-values and unsorts results.
-//! * Delegates computation to the execution engine.
-//! * Supports all LOWESS features: robustness, CV, intervals, diagnostics.
-//! * Uses builder pattern for configuration.
-//! * Generic over `Float` types to support f32 and f64.
+//! * **Processing**: Processes entire dataset in a single pass.
+//! * **Sorting**: Automatically sorts data by x-values and unsorts results.
+//! * **Delegation**: Delegates computation to the execution engine.
+//! * **Generics**: Generic over `Float` types.
 //!
 //! ## Key concepts
 //!
-//! ### Batch Processing
-//! The batch adapter:
-//! 1. Validates input data
-//! 2. Sorts data by x-values (required for LOWESS)
-//! 3. Executes LOWESS smoothing via the engine
-//! 4. Computes optional outputs (diagnostics, intervals, residuals)
-//! 5. Unsorts results to match original input order
-//! 6. Packages everything into a `LowessResult`
-//!
-//! ### Builder Pattern
-//! Configuration is done through `BatchLowessBuilder`:
-//! * Fluent API for setting parameters
-//! * Sensible defaults for all parameters
-//! * Validation deferred until `fit()` is called
-//!
-//! ### Automatic Sorting
-//! LOWESS requires sorted x-values. The batch adapter:
-//! * Automatically sorts input data by x
-//! * Tracks original indices
-//! * Unsorts all outputs to match original order
-//!
-//! ## Supported features
-//!
-//! * **Robustness iterations**: Downweight outliers iteratively
-//! * **Cross-validation**: Automatic fraction selection
-//! * **Auto-convergence**: Adaptive iteration count
-//! * **Confidence intervals**: Uncertainty in fitted curve
-//! * **Prediction intervals**: Uncertainty for new observations
-//! * **Diagnostics**: RMSE, MAE, R^2, AIC, AICc
-//! * **Residuals**: Differences between original and smoothed values
-//! * **Robustness weights**: Final weights from iterative refinement
+//! * **Batch Processing**: Validates, sorts, filters, executes, and unsorts.
+//! * **Builder Pattern**: Fluent API for configuration with sensible defaults.
+//! * **Automatic Sorting**: Ensures x-values are sorted for the algorithm.
 //!
 //! ## Invariants
 //!
 //! * Input arrays x and y must have the same length.
-//! * All values must be finite (no NaN or infinity).
+//! * All values must be finite.
 //! * At least 2 data points are required.
-//! * Fraction must be in (0, 1].
-//! * Output order matches input order (automatic unsorting).
+//! * Output order matches input order.
 //!
 //! ## Non-goals
 //!
 //! * This adapter does not handle streaming data (use streaming adapter).
 //! * This adapter does not handle incremental updates (use online adapter).
-//! * This adapter does not provide parallel execution (single-threaded).
-//! * This adapter does not handle missing values (NaN).
-//!
-//! ## Visibility
-//!
-//! The batch adapter is part of the public API through the high-level
-//! `Lowess` builder. Direct usage of `BatchLowess` is possible but not
-//! the primary interface.
+//! * This adapter does not handle missing values.
 
-use crate::algorithms::interpolation::calculate_delta;
-use crate::algorithms::regression::ZeroWeightFallback;
-use crate::algorithms::robustness::RobustnessMethod;
-use crate::engine::executor::{LowessConfig, LowessExecutor, SmoothPassFn};
-use crate::engine::output::LowessResult;
-use crate::engine::validator::Validator;
-use crate::evaluation::cv::CVMethod;
-use crate::evaluation::diagnostics::Diagnostics;
-use crate::evaluation::intervals::IntervalMethod;
-use crate::math::kernel::WeightFunction;
-use crate::primitives::errors::LowessError;
-use crate::primitives::partition::BoundaryPolicy;
-use crate::primitives::sorting::{sort_by_x, unsort};
-
-use core::fmt::Debug;
-use core::result::Result;
-use num_traits::Float;
-
+// Feature-gated imports
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::vec::Vec;
+
+// External dependencies
+use core::fmt::Debug;
+use num_traits::Float;
+
+// Internal dependencies
+use crate::algorithms::interpolation::calculate_delta;
+use crate::algorithms::regression::ZeroWeightFallback;
+use crate::algorithms::robustness::RobustnessMethod;
+use crate::engine::executor::{CVPassFn, FitPassFn, IntervalPassFn, SmoothPassFn};
+use crate::engine::executor::{LowessConfig, LowessExecutor};
+use crate::engine::output::LowessResult;
+use crate::engine::validator::Validator;
+use crate::evaluation::cv::CVKind;
+use crate::evaluation::diagnostics::Diagnostics;
+use crate::evaluation::intervals::IntervalMethod;
+use crate::math::kernel::WeightFunction;
+use crate::primitives::backend::Backend;
+use crate::primitives::errors::LowessError;
+use crate::primitives::partition::BoundaryPolicy;
+use crate::primitives::sorting::{sort_by_x, unsort};
 
 // ============================================================================
 // Batch LOWESS Builder
@@ -123,8 +87,11 @@ pub struct BatchLowessBuilder<T: Float> {
     /// Fractions for cross-validation
     pub cv_fractions: Option<Vec<T>>,
 
-    /// Cross-validation method
-    pub cv_method: Option<CVMethod>,
+    /// Cross-validation method kind
+    pub cv_kind: Option<CVKind>,
+
+    /// Cross-validation seed
+    pub cv_seed: Option<u64>,
 
     /// Deferred error from adapter conversion
     pub deferred_error: Option<LowessError>,
@@ -147,10 +114,35 @@ pub struct BatchLowessBuilder<T: Float> {
     /// Policy for handling data boundaries
     pub boundary_policy: BoundaryPolicy,
 
-    /// Optional custom smoothing function (e.g., for parallel execution)
+    // ++++++++++++++++++++++++++++++++++++++
+    // +               DEV                  +
+    // ++++++++++++++++++++++++++++++++++++++
+    /// Custom smooth pass function.
+    #[doc(hidden)]
     pub custom_smooth_pass: Option<SmoothPassFn<T>>,
 
+    /// Custom cross-validation pass function.
+    #[doc(hidden)]
+    pub custom_cv_pass: Option<CVPassFn<T>>,
+
+    /// Custom interval estimation pass function.
+    #[doc(hidden)]
+    pub custom_interval_pass: Option<IntervalPassFn<T>>,
+
+    /// Custom fit pass function.
+    #[doc(hidden)]
+    pub custom_fit_pass: Option<FitPassFn<T>>,
+
+    /// Execution backend hint.
+    #[doc(hidden)]
+    pub backend: Option<Backend>,
+
+    /// Parallel execution hint.
+    #[doc(hidden)]
+    pub parallel: Option<bool>,
+
     /// Tracks if any parameter was set multiple times (for validation)
+    #[doc(hidden)]
     pub(crate) duplicate_param: Option<&'static str>,
 }
 
@@ -171,7 +163,8 @@ impl<T: Float> BatchLowessBuilder<T> {
             robustness_method: RobustnessMethod::default(),
             interval_type: None,
             cv_fractions: None,
-            cv_method: None,
+            cv_kind: None,
+            cv_seed: None,
             deferred_error: None,
             auto_convergence: None,
             return_diagnostics: false,
@@ -180,6 +173,11 @@ impl<T: Float> BatchLowessBuilder<T> {
             zero_weight_fallback: ZeroWeightFallback::default(),
             boundary_policy: BoundaryPolicy::default(),
             custom_smooth_pass: None,
+            custom_cv_pass: None,
+            custom_interval_pass: None,
+            custom_fit_pass: None,
+            backend: None,
+            parallel: None,
             duplicate_param: None,
         }
     }
@@ -277,8 +275,47 @@ impl<T: Float> BatchLowessBuilder<T> {
     }
 
     /// Set the cross-validation method.
-    pub fn cv_method(mut self, method: CVMethod) -> Self {
-        self.cv_method = Some(method);
+    pub fn cv_kind(mut self, kind: CVKind) -> Self {
+        self.cv_kind = Some(kind);
+        self
+    }
+
+    // ++++++++++++++++++++++++++++++++++++++
+    // +               DEV                  +
+    // ++++++++++++++++++++++++++++++++++++++
+
+    /// Set the execution backend hint.
+    #[doc(hidden)]
+    pub fn backend(mut self, backend: Backend) -> Self {
+        self.backend = Some(backend);
+        self
+    }
+
+    /// Set parallel execution hint.
+    #[doc(hidden)]
+    pub fn parallel(mut self, parallel: bool) -> Self {
+        self.parallel = Some(parallel);
+        self
+    }
+
+    /// Set a custom smooth pass function.
+    #[doc(hidden)]
+    pub fn custom_smooth_pass(mut self, pass: SmoothPassFn<T>) -> Self {
+        self.custom_smooth_pass = Some(pass);
+        self
+    }
+
+    /// Set a custom cross-validation pass function.
+    #[doc(hidden)]
+    pub fn custom_cv_pass(mut self, pass: CVPassFn<T>) -> Self {
+        self.custom_cv_pass = Some(pass);
+        self
+    }
+
+    /// Set a custom interval estimation pass function.
+    #[doc(hidden)]
+    pub fn custom_interval_pass(mut self, pass: IntervalPassFn<T>) -> Self {
+        self.custom_interval_pass = Some(pass);
         self
     }
 
@@ -311,9 +348,12 @@ impl<T: Float> BatchLowessBuilder<T> {
             Validator::validate_interval_level(method.level)?;
         }
 
-        // Validate CV fractions
+        // Validate CV fractions and method
         if let Some(ref fracs) = self.cv_fractions {
             Validator::validate_cv_fractions(fracs)?;
+        }
+        if let Some(crate::evaluation::cv::CVKind::KFold(k)) = self.cv_kind {
+            Validator::validate_kfold(k)?;
         }
 
         // Validate auto convergence tolerance
@@ -354,11 +394,20 @@ impl<T: Float + Debug + Send + Sync + 'static> BatchLowess<T> {
             zero_weight_fallback: zw_flag,
             robustness_method: self.config.robustness_method,
             cv_fractions: self.config.cv_fractions,
-            cv_method: self.config.cv_method,
+            cv_kind: self.config.cv_kind,
             auto_convergence: self.config.auto_convergence,
             return_variance: self.config.interval_type,
             boundary_policy: self.config.boundary_policy,
+            cv_seed: self.config.cv_seed,
+            // ++++++++++++++++++++++++++++++++++++++
+            // +               DEV                  +
+            // ++++++++++++++++++++++++++++++++++++++
             custom_smooth_pass: self.config.custom_smooth_pass,
+            custom_cv_pass: self.config.custom_cv_pass,
+            custom_interval_pass: self.config.custom_interval_pass,
+            custom_fit_pass: self.config.custom_fit_pass,
+            parallel: self.config.parallel.unwrap_or(false),
+            backend: self.config.backend,
         };
 
         // Execute unified LOWESS
@@ -371,11 +420,12 @@ impl<T: Float + Debug + Send + Sync + 'static> BatchLowess<T> {
         let cv_scores = result.cv_scores;
 
         // Calculate residuals
-        let n = x.len();
-        let mut residuals = Vec::with_capacity(n);
-        for (i, &smoothed_val) in y_smooth.iter().enumerate().take(n) {
-            residuals.push(sorted.y[i] - smoothed_val);
-        }
+        let residuals: Vec<T> = sorted
+            .y
+            .iter()
+            .zip(y_smooth.iter())
+            .map(|(&orig, &smoothed_val)| orig - smoothed_val)
+            .collect();
 
         // Get robustness weights from executor result (final iteration weights)
         let rob_weights = if self.config.return_robustness_weights {

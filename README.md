@@ -63,35 +63,35 @@ The factor 1.4826 = 1/Phi^-1(3/4) ensures consistency with the standard deviatio
 
 ## Performance Advantages
 
-Benchmarked against R's `stats::lowess`. Achieves **1.4x to 3.4x faster performance** across different tested scenarios. The parallel implementation ensures efficient processing even at scale.
+Benchmarked against R's `stats::lowess`. Achieves **1.2x to 5.1x faster performance** across different tested scenarios. The parallel implementation ensures efficient processing even at scale.
 
 ### Summary
 
 | Category               | Median Speedup | Mean Speedup |
 | :--------------------- | :------------- | :----------- |
-| **Genomic Data**       | **3.02×**      | 2.53×        |
-| **Pathological Cases** | **2.28×**      | 2.38×        |
-| **Iterations**         | **1.68×**      | 1.80×        |
-| **Scalability**        | **1.66×**      | 1.40×        |
-| **Fraction**           | **1.58×**      | 1.54×        |
-| **Delta**              | **1.26×**      | 1.68×        |
-| **Scientific**         | **1.19×**      | 1.17×        |
-| **Financial**          | **0.96×**      | 0.97×        |
+| **Genomic Data**       | **3.44×**      | 2.88×        |
+| **Pathological Cases** | **3.13×**      | 3.19×        |
+| **Iterations**         | **2.50×**      | 2.45×        |
+| **Scalability**        | **2.31×**      | 2.01×        |
+| **Delta**              | **2.10×**      | 2.65×        |
+| **Fraction**           | **1.85×**      | 1.91×        |
+| **Scientific**         | **1.48×**      | 1.52×        |
+| **Financial**          | **1.36×**      | 1.28×        |
 
 ### Top 10 Performance Wins
 
-| Benchmark        | stats::lowess | fastlowess | Speedup    |
-| :--------------- | :------------ | :--------- | :--------- |
-| genomic_10000    | 116.67 ms     | 33.93 ms   | **3.44×**  |
-| delta_none       | 173.95 ms     | 50.89 ms   | **3.42×**  |
-| genomic_5000     | 29.32 ms      | 9.70 ms    | **3.02×**  |
-| clustered_x      | 1.46 ms       | 0.54 ms    | **2.70×**  |
-| iterations_1     | 0.78 ms       | 0.31 ms    | **2.53×**  |
-| extreme_outliers | 4.37 ms       | 1.90 ms    | **2.30×**  |
-| high_noise       | 5.13 ms       | 2.26 ms    | **2.27×**  |
-| constant_y       | 1.09 ms       | 0.48 ms    | **2.26×**  |
-| iterations_0     | 0.37 ms       | 0.18 ms    | **2.04×**  |
-| financial_10000  | 1.31 ms       | 0.73 ms    | **1.79×**  |
+| Benchmark        | stats::lowess | fastlowess | Speedup   |
+| :--------------- | :------------ | :--------- | :-------- |
+| delta_none       | 164.14 ms     | 32.24 ms   | **5.09×** |
+| genomic_10000    | 110.78 ms     | 27.32 ms   | **4.05×** |
+| high_noise       | 4.86 ms       | 1.37 ms    | **3.54×** |
+| genomic_5000     | 27.66 ms      | 8.04 ms    | **3.44×** |
+| clustered        | 1.43 ms       | 0.44 ms    | **3.24×** |
+| iterations_1     | 0.77 ms       | 0.24 ms    | **3.20×** |
+| extreme_outliers | 4.09 ms       | 1.35 ms    | **3.02×** |
+| iterations_3     | 1.59 ms       | 0.53 ms    | **2.98×** |
+| constant_y       | 1.04 ms       | 0.35 ms    | **2.96×** |
+| iterations_2     | 1.16 ms       | 0.42 ms    | **2.75×** |
 
 Check [Benchmarks](https://github.com/thisisamirv/fastLowess-R/tree/bench/benchmarks) for detailed results and reproducible benchmarking code.
 

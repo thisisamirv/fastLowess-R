@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
+import hashlib
 import json
 import os
 import shutil
 import sys
+
+def sha256_file(path):
+    """Calculate SHA256 hash of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 def clean_checksums(vendor_dir):
     print(f"Cleaning checksums in {vendor_dir}...")
@@ -44,18 +53,23 @@ def clean_checksums(vendor_dir):
                     # Remove keys that:
                     # 1. Were hidden files (handled above)
                     # 2. Don't exist on disk (were inside stripped dirs)
+                    # Also: recalculate checksums for files that exist (handles CRLF->LF)
                     new_files = {}
                     for k, v in original_files.items():
-                        # Normalized path for checking existence
-                        exists = os.path.exists(os.path.join(root, k))
+                        file_path = os.path.join(root, k)
+                        exists = os.path.exists(file_path)
                         is_hidden = any(part.startswith(".") for part in k.split("/"))
                         
                         if exists and not is_hidden:
-                            new_files[k] = v
+                            # Recalculate checksum to handle line ending changes
+                            new_hash = sha256_file(file_path)
+                            new_files[k] = new_hash
                         # If it doesn't exist or is hidden, it is excluded from checksum
                     
-                    if len(original_files) != len(new_files):
-                        print(f"  Updated {filepath}: removed {len(original_files) - len(new_files)} entries")
+                    if original_files != new_files:
+                        removed = len(original_files) - len(new_files)
+                        updated = sum(1 for k in new_files if k in original_files and original_files[k] != new_files[k])
+                        print(f"  Updated {filepath}: removed {removed} entries, recalculated {updated} checksums")
                         data["files"] = new_files
                         with open(filepath, "w") as f:
                             json.dump(data, f)
@@ -68,3 +82,4 @@ def clean_checksums(vendor_dir):
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else "src/vendor"
     clean_checksums(target)
+

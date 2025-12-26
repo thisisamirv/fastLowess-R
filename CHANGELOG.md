@@ -16,6 +16,10 @@ and this package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated to `fastLowess` v0.3.0 and `lowess` v0.6.0.
 - Updated cross-validation API to use tuple constructors (`KFold`, `LOOCV`).
 
+### Fixed
+
+- Automated vendor checksum fixing for CI builds (CRLF→LF line ending issues).
+
 ## [0.2.0]
 
 - For changes to the core logic and the API, see the [lowess](https://github.com/av746/lowess) and [fastLowess](https://github.com/av746/fastLowess) crates.

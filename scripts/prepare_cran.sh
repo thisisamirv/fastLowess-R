@@ -8,49 +8,9 @@ echo "   -> Vendoring Rust dependencies..."
 mkdir -p src/cargo
 (cd src && cargo vendor vendor > cargo/config.toml)
 
-# 2. Clean hidden files and fix checksums
-echo "   -> Cleaning hidden files from vendor..."
-python3 -c '
-import os, json, shutil, re
-
-VENDOR_DIR = "src/vendor"
-
-# Pattern to match hidden files anywhere in path (e.g., "tests/fst/.gitignore")
-HIDDEN_PATTERN = re.compile(r"(^|/)\.")
-
-# Remove hidden directories
-for root, dirs, files in os.walk(VENDOR_DIR, topdown=True):
-    for d in list(dirs):
-        if d.startswith("."):
-            full_path = os.path.join(root, d)
-            print(f"      Removing dir: {full_path}")
-            shutil.rmtree(full_path)
-            dirs.remove(d)
-
-# Remove ALL hidden files from disk (at any depth)
-for root, dirs, files in os.walk(VENDOR_DIR):
-    for f in files:
-        if f.startswith(".") and f != ".cargo-checksum.json":
-            full_path = os.path.join(root, f)
-            print(f"      Removing file: {full_path}")
-            os.remove(full_path)
-
-# Fix checksums - remove entries for ANY hidden file in the path
-for root, dirs, files in os.walk(VENDOR_DIR):
-    if ".cargo-checksum.json" in files:
-        path = os.path.join(root, ".cargo-checksum.json")
-        with open(path, "r") as f: d = json.load(f)
-        
-        files_dict = d.get("files", {})
-        # Match: starts with ".", OR contains "/." anywhere (hidden file in subdir)
-        removals = [k for k in files_dict if HIDDEN_PATTERN.search(k)]
-        
-        if removals:
-            print(f"      Fixed {len(removals)} checksum entries in {path}")
-            for k in removals: del files_dict[k]
-            d["files"] = files_dict
-            with open(path, "w") as f: json.dump(d, f)
-'
+# 2. Clean vendor: strip tests/benches/examples, fix checksums
+echo "   -> Cleaning vendor directory and fixing checksums..."
+python3 scripts/clean_checksums.py src/vendor
 
 # 3. Generate AUTHORS file
 echo "   -> Generating inst/AUTHORS..."

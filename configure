@@ -6,16 +6,12 @@ UNAME=$(uname)
 
 # Default to Linux flags
 GC_SECTIONS="-Wl,--gc-sections"
-# Symbols need -u flag. On Linux, symbols do usually NOT have a leading underscore.
-# However, R's C entry points usually match the function name.
-UNDEFINED_FLAGS="-Wl,-u,R_init_fastlowess -Wl,-u,wrap__smooth -Wl,-u,wrap__smooth_streaming -Wl,-u,wrap__smooth_online"
+UNDEFINED_FLAGS=""
 
 if [ "$UNAME" = "Darwin" ]; then
     echo "Configuring for macOS..."
     # macOS uses -dead_strip instead of --gc-sections
     GC_SECTIONS="-Wl,-dead_strip"
-    # macOS symbols typically have a leading underscore in Mach-O
-    UNDEFINED_FLAGS="-Wl,-u,_R_init_fastlowess -Wl,-u,_wrap__smooth -Wl,-u,_wrap__smooth_streaming -Wl,-u,_wrap__smooth_online"
 else
     echo "Configuring for Linux/Unix..."
 fi

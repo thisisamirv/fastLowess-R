@@ -1,4 +1,10 @@
-TARGET_DIR = ../target
+# Detect WASM build environment (R-universe sets CARGO_BUILD_TARGET for WASM)
+ifeq ($(CARGO_BUILD_TARGET),wasm32-unknown-emscripten)
+	TARGET_DIR = ./target
+else
+	TARGET_DIR = ../target
+endif
+
 LIBDIR = $(TARGET_DIR)/release
 STATLIB = $(LIBDIR)/libfastlowess.a
 

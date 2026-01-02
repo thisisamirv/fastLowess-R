@@ -114,7 +114,7 @@ benchmark_scalability <- function(iterations = 10, parallel = TRUE) {
   cat(rep("=", 80), "\n", sep = "")
 
   results <- list()
-  sizes <- c(1000, 5000, 10000, 50000, 100000)
+  sizes <- c(1000, 5000, 10000, 50000)
 
   for (size in sizes) {
     data <- generate_sine_data(size, seed = 42)
@@ -460,8 +460,13 @@ run_suite <- function(parallel, output_filename) {
   )
 
   # Save to output directory
-  script_dir <- dirname(sys.frame(1)$ofile)
-  if (is.null(script_dir) || script_dir == "") {
+  # Get script directory (works with Rscript)
+  args <- commandArgs(trailingOnly = FALSE)
+  file_arg <- grep("^--file=", args, value = TRUE)
+  if (length(file_arg) > 0) {
+    script_path <- sub("^--file=", "", file_arg)
+    script_dir <- dirname(script_path)
+  } else {
     script_dir <- getwd()
   }
   benchmarks_dir <- dirname(script_dir)

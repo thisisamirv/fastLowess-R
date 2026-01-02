@@ -30,7 +30,7 @@
 
 ## Conclusion
 
-The Rust `fastlowess` crate is a **numerical twin** to R's `stats::lowess` implementation:
+The Rust `fastlowess` package is a **numerical twin** to R's `stats::lowess` implementation:
 
 1. **Floating Point Precision**: Differences are within machine epsilon noise (< 1e-12 for all cases).
 2. **Robustness Correctness**: Robust iterations produce identical weights and smoothed values.

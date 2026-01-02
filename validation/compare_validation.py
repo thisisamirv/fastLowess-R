@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compare fastLowess validation results against R's stats::lowess implementation.
+Compare fastlowess validation results against R's stats::lowess implementation.
 R is the reference implementation (original Fortran lowess).
 """
 
@@ -9,21 +9,21 @@ import numpy as np
 from pathlib import Path
 
 def compare_implementations():
-    # Adjusted paths for fastLowess repository structure
+    # Adjusted paths for fastlowess repository structure
     base_dir = Path("output")
     r_dir = base_dir / "r"
-    fastLowess_dir = base_dir / "fastLowess"
+    fastlowess_dir = base_dir / "fastlowess"
     
     if not r_dir.exists():
         print(f"Error: R output directory not found at {r_dir}. Run R/validate.R first.")
         return False
     
-    if not fastLowess_dir.exists():
-        print(f"Error: fastLowess output directory not found at {fastLowess_dir}. Run fastLowess/src/validate.rs first.")
+    if not fastlowess_dir.exists():
+        print(f"Error: fastlowess output directory not found at {fastlowess_dir}. Run fastlowess/src/validate.rs first.")
         return False
     
     print("=" * 85)
-    print("VALIDATION: fastLowess (Rust) vs R stats::lowess (Reference)")
+    print("VALIDATION: fastlowess (Rust) vs R stats::lowess (Reference)")
     print("=" * 85)
     print()
     print(f"{'SCENARIO':<30} | {'STATUS':<15} | {'MAX DIFF':<15} | {'RMSE':<15}")
@@ -36,29 +36,29 @@ def compare_implementations():
     
     for scenario in scenarios:
         r_file = r_dir / f"{scenario}.json"
-        fastLowess_file = fastLowess_dir / f"{scenario}.json"
+        fastlowess_file = fastlowess_dir / f"{scenario}.json"
         
-        if not fastLowess_file.exists():
+        if not fastlowess_file.exists():
             print(f"{scenario:<30} | {'MISSING':<15} | {'-':<15} | {'-':<15}")
             continue
         
         # Load data
         with open(r_file) as f:
             r_data = json.load(f)
-        with open(fastLowess_file) as f:
-            fastLowess_data = json.load(f)
+        with open(fastlowess_file) as f:
+            fastlowess_data = json.load(f)
         
         # Compare fitted values
         r_fitted = np.array(r_data['result']['fitted'])
-        fastLowess_fitted = np.array(fastLowess_data['result']['fitted'])
+        fastlowess_fitted = np.array(fastlowess_data['result']['fitted'])
         
         # Ensure lengths match
-        if len(r_fitted) != len(fastLowess_fitted):
+        if len(r_fitted) != len(fastlowess_fitted):
              print(f"{scenario:<30} | {'SIZE MISMATCH':<15} | {'-':<15} | {'-':<15}")
              mismatches.append(scenario)
              continue
 
-        diff = np.abs(r_fitted - fastLowess_fitted)
+        diff = np.abs(r_fitted - fastlowess_fitted)
         max_diff = np.max(diff)
         rmse = np.sqrt(np.mean(diff**2))
         

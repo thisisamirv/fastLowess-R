@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 from statistics import mean, median
-import math
 
 def load_json(p: Path):
     if not p.exists():
@@ -37,62 +36,11 @@ def build_map(entries):
         out[name] = e
     return out
 
-def compare_category(candidate_entries, baseline_entries):
-    cand_map = build_map(candidate_entries)
-    base_map = build_map(baseline_entries)
-    
-    common = sorted(set(cand_map.keys()) & set(base_map.keys()))
-    rows = []
-    speedups = []
-    
-    for name in common:
-        c_entry = cand_map[name]
-        b_entry = base_map[name]
-        
-        c_val, c_size = pick_time_value(c_entry)
-        b_val, b_size = pick_time_value(b_entry)
-        
-        # c_val = candidate time (e.g. fastlowess), b_val = baseline time (e.g. Statsmodels)
-        
-        row = {
-            "name": name,
-            "candidate_ms": c_val,
-            "baseline_ms": b_val,
-            "size": c_size or b_size,
-            "notes": []
-        }
-        
-        if c_val is None or b_val is None:
-            row["notes"].append("missing_metric")
-            rows.append(row)
-            continue
-            
-        if c_val == 0 or b_val == 0:
-            speedup = None
-        else:
-            # Speedup = Baseline / Candidate
-            # Example: Statsmodels=100ms, fastlowess=10ms -> Speedup = 10x
-            speedup = b_val / c_val
-            
-        row["speedup"] = speedup
-        if speedup is not None:
-             speedups.append(speedup)
-             
-        rows.append(row)
-        
-    summary = {
-        "compared": len(common),
-        "mean_speedup": mean(speedups) if speedups else None,
-        "median_speedup": median(speedups) if speedups else None,
-    }
-    return rows, summary
-
 def load_all_data(output_dir: Path):
     files = {
-        "fastlowess (CPU)": output_dir / "fastlowess_benchmark.json",
+        "fastlowess (Parallel)": output_dir / "fastlowess_benchmark.json",
         "fastlowess (Serial)": output_dir / "fastlowess_benchmark_serial.json",
         "R": output_dir / "r_benchmark.json",
-        "statsmodels": output_dir / "statsmodels_benchmark.json"
     }
     
     data = {}
@@ -121,16 +69,16 @@ def main():
     out_dir = workspace / "output"
     
     data = load_all_data(out_dir)
-    stats_data = data.get("statsmodels")
+    r_data = data.get("R")
     
-    if not stats_data:
-        print("Statsmodels baseline data not found or empty.")
+    if not r_data:
+        print("R baseline data not found or empty.")
         return
 
     # Collect all benchmark names
-    all_names = set(stats_data.keys())
+    all_names = set(r_data.keys())
     for label, d in data.items():
-        if label != "statsmodels":
+        if label != "R":
             all_names.update(d.keys())
             
     large_scale_benchmarks = {
@@ -143,15 +91,10 @@ def main():
     large_scale_names = sorted([n for n in all_names if n in large_scale_benchmarks])
     sorted_names = regular_names + large_scale_names
     
-    # Columns
-    candidate_keys = ["R", "fastlowess (CPU)"]
-    candidate_labels = ["R", "fastlowess"]
-    
     # Print Table Header
-    # Format: 
-    # Name | statsmodels | R | fastlowess |
-    print(f"{'Name':<21} | {'statsmodels':^11} | {'R':^11} | {'fastlowess':^13} |")
-    print("-" * 67)
+    # Format: Name | R | fastlowess |
+    print(f"{'Name':<21} | {'R':^11} | {'fastlowess':^13} |")
+    print("-" * 51)
 
     for name in sorted_names:
         is_large_scale = name in large_scale_benchmarks
@@ -166,8 +109,8 @@ def main():
             serial_data = data.get("fastlowess (Serial)", {})
             base_entry = serial_data.get(name)
         else:
-             # Baseline is statsmodels
-             base_entry = stats_data.get(name)
+             # Baseline is R
+             base_entry = r_data.get(name)
              if base_entry:
                   base_val, _ = pick_time_value(base_entry)
                   if base_val and base_val > 0:
@@ -180,94 +123,48 @@ def main():
 
         if base_val is None or base_val == 0:
              # Missing baseline
-             for _ in candidate_labels:
-                 row_str += f" {'-':^13} |" if _ == "fastlowess" else f" {'-':^11} |"
+             row_str += f" {'-':^13} |"
         else:
-            # Collect speedups for ranking
-            # Structure: list of (candidate_label, speedup_val, display_str, raw_speedup_for_rank)
-            results = []
+            # Get fastlowess speedup
+            serial_data = data.get("fastlowess (Serial)", {})
+            par_data = data.get("fastlowess (Parallel)", {})
+            s_entry = serial_data.get(name)
+            p_entry = par_data.get(name)
             
-            for cand_key, cand_label in zip(candidate_keys, candidate_labels):
-                if cand_label == "R" and is_large_scale:
-                    results.append((cand_label, None, "-", -1))
-                    continue
-                
-                if cand_label == "fastlowess":
-                     serial_data = data.get("fastlowess (Serial)", {})
-                     par_data = data.get("fastlowess (CPU)", {})
-                     s_entry = serial_data.get(name)
-                     p_entry = par_data.get(name)
-                     
-                     s_val = pick_time_value(s_entry)[0] if s_entry else None
-                     p_val = pick_time_value(p_entry)[0] if p_entry else None
-                     
-                     s_speedup_str = "?"
-                     p_speedup_str = "?"
-                     rank_val = -1
-                     
-                     if is_large_scale:
-                         # Serial is baseline (1x)
-                         s_speedup_str = "1"
-                         if p_val and p_val > 0:
-                             p_speedup = base_val / p_val
-                             rank_val = p_speedup
-                             p_speedup_str = f"{p_speedup:.1f}" if p_speedup < 10 else f"{p_speedup:.0f}"
-                     else:
-                         if s_val and s_val > 0:
-                             s_speedup = base_val / s_val
-                             s_speedup_str = f"{s_speedup:.1f}" if s_speedup < 10 else f"{s_speedup:.0f}"
-                         
-                         if p_val and p_val > 0:
-                             p_speedup = base_val / p_val
-                             rank_val = p_speedup
-                             p_speedup_str = f"{p_speedup:.1f}" if p_speedup < 10 else f"{p_speedup:.0f}"
-                             
-                     disp = "-"
-                     if s_speedup_str != "?" or p_speedup_str != "?":
-                         disp = f"{s_speedup_str}-{p_speedup_str}x"
-                         
-                     results.append((cand_label, rank_val, disp, rank_val))
-                     
-                else: # R
-                    cand_data = data.get(cand_key, {})
-                    cand_entry = cand_data.get(name)
-                    rank_val = -1
-                    disp = "-"
-                    
-                    if cand_entry:
-                        c_val, _ = pick_time_value(cand_entry)
-                        if c_val and c_val > 0:
-                             speedup = base_val / c_val
-                             rank_val = speedup
-                             disp = f"{speedup:.1f}x"
-                    
-                    results.append((cand_label, rank_val, disp, rank_val))
-
-            # Rank
-            # Filter valid speedups > 0
-            valid_ranks = sorted([r[3] for r in results if r[3] > 0], reverse=True)
+            s_val = pick_time_value(s_entry)[0] if s_entry else None
+            p_val = pick_time_value(p_entry)[0] if p_entry else None
             
-            final_cells = []
-            for cand, _, disp, r_val in results:
-                cell_text = disp
-                # Only apply highlighting for non-large-scale benchmarks (where we have all candidates)
-                if not is_large_scale and r_val > 0 and valid_ranks:
-                    if r_val == valid_ranks[0]:
-                        cell_text = f"[{disp}]\u00b9"
-                    elif len(valid_ranks) > 1 and r_val == valid_ranks[1]:
-                         cell_text = f"[{disp}]\u00b2"
+            s_speedup_str = "?"
+            p_speedup_str = "?"
+            
+            if is_large_scale:
+                # Serial is baseline (1x)
+                s_speedup_str = "1"
+                if p_val and p_val > 0:
+                    p_speedup = base_val / p_val
+                    p_speedup_str = f"{p_speedup:.1f}" if p_speedup < 10 else f"{p_speedup:.0f}"
+            else:
+                if s_val and s_val > 0:
+                    s_speedup = base_val / s_val
+                    s_speedup_str = f"{s_speedup:.1f}" if s_speedup < 10 else f"{s_speedup:.0f}"
                 
-                final_cells.append(cell_text)
-
-            row_str += f" {final_cells[0]:^11} | {final_cells[1]:^13} |"
+                if p_val and p_val > 0:
+                    p_speedup = base_val / p_val
+                    p_speedup_str = f"{p_speedup:.1f}" if p_speedup < 10 else f"{p_speedup:.0f}"
+                    
+            disp = "-"
+            if s_speedup_str != "?" or p_speedup_str != "?":
+                disp = f"{s_speedup_str}-{p_speedup_str}x"
+                
+            row_str += f" {disp:^13} |"
             
         print(row_str)
 
-    print("-" * 67)
-
-    print("* fastlowess column shows speedup range: Serial-Parallel (e.g., 12-48x means 12x speedup sequential, 48x parallel)")
-    print("\u00b9 Winner (Fastest implementation)")
-    print("\u00b2 Runner-up (Second fastest implementation)")
+    print("-" * 51)
+    print()
+    print("* fastlowess column shows speedup range: Serial-Parallel")
+    print("  (e.g., 12-48x means 12x speedup sequential, 48x parallel)")
+    print("** Large Scale: fastlowess (Serial) is the baseline (1x)")
 
 if __name__ == "__main__":
     main()

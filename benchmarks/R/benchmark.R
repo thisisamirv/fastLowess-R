@@ -131,7 +131,7 @@ generate_high_noise_data <- function(size, seed = 42) {
 
 benchmark_scalability <- function(iterations = 10) {
   results <- list()
-  sizes <- c(1000, 5000, 10000, 50000, 100000)
+  sizes <- c(1000, 5000, 10000, 50000)
 
   for (size in sizes) {
     data <- generate_sine_data(size)

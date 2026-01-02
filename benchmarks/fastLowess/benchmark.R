@@ -1,286 +1,488 @@
-#!/usr/bin/Rscript
-# Industry-level LOWESS benchmarks for fastlowess.
-# Aligned with the fastLowess-py and statsmodels benchmarks.
-# Results are written to benchmarks/output/fastLowess_benchmark.json.
+# Industry-level LOWESS benchmarks with JSON output for comparison
+#
+# Benchmarks are aligned with the Python and Rust criterion benchmarks.
+# Results are written to benchmarks/output/fastlowess_benchmark.json.
 #
 # Run with: Rscript benchmark.R
 
-suppressPackageStartupMessages({
-  library(fastlowess)
-  library(bench)
-  library(jsonlite)
-})
+library(jsonlite)
+library(fastlowess)
 
 # ============================================================================
-# Data Generation (Aligned with Python implementation)
+# Data Generation (Aligned with Python/Rust)
 # ============================================================================
 
 generate_sine_data <- function(size, seed = 42) {
   set.seed(seed)
-  x <- seq(0, 10, length.out = size)
-  y <- sin(x) + rnorm(size, 0, 0.2)
+  x <- seq(0, 10.0, length.out = size)
+  y <- sin(x) + rnorm(size, mean = 0.0, sd = 0.2)
   list(x = x, y = y)
 }
 
 generate_outlier_data <- function(size, seed = 42) {
   set.seed(seed)
-  x <- seq(0, 10, length.out = size)
-  y <- sin(x) + rnorm(size, 0, 0.2)
+  x <- seq(0, 10.0, length.out = size)
+  y <- sin(x) + rnorm(size, mean = 0.0, sd = 0.2)
 
-  # Add 5% outliers
-  n_outliers <- floor(size / 20)
-  if (n_outliers > 0) {
-    indices <- sample(1:size, n_outliers)
-    y[indices] <- y[indices] + runif(n_outliers, -5, 5)
-  }
+  n_outliers <- as.integer(size / 20)
+  outlier_indices <- sample(1:size, n_outliers)
+  y[outlier_indices] <- y[outlier_indices] + runif(n_outliers, min = -5.0, max = 5.0)
+
   list(x = x, y = y)
 }
 
 generate_financial_data <- function(size, seed = 42) {
   set.seed(seed)
-  x <- 0:(size - 1)
+  x <- seq(0, size - 1, by = 1)
   y <- numeric(size)
   y[1] <- 100.0
-  for (i in 2:size) {
-    ret <- rnorm(1, 0.0005, 0.02)
-    y[i] <- y[i - 1] * (1 + ret)
-  }
-  list(x = as.numeric(x), y = y)
+  returns <- rnorm(size - 1, mean = 0.0005, sd = 0.02)
+  y[2:size] <- 100.0 * cumprod(1.0 + returns)
+  list(x = x, y = y)
 }
 
 generate_scientific_data <- function(size, seed = 42) {
   set.seed(seed)
-  x <- seq(0, 10, length.out = size)
-  signal <- exp(-x * 0.3) * cos(x * 2 * pi)
-  noise <- rnorm(size, 0, 0.05)
-  list(x = x, y = signal + noise)
+  x <- seq(0, size * 0.01, length.out = size)
+  signal <- exp(-x * 0.3) * cos(x * 2.0 * pi)
+  y <- signal + rnorm(size, mean = 0.0, sd = 0.05)
+  list(x = x, y = y)
 }
 
 generate_genomic_data <- function(size, seed = 42) {
   set.seed(seed)
-  x <- (0:(size - 1)) * 1000.0
+  x <- seq(0, size - 1, by = 1) * 1000.0
   base <- 0.5 + sin(x / 50000.0) * 0.3
-  noise <- rnorm(size, 0, 0.1)
-  y <- pmax(0.0, pmin(1.0, base + noise))
+  noise <- rnorm(size, mean = 0.0, sd = 0.1)
+  y <- pmin(pmax(base + noise, 0.0), 1.0)
   list(x = x, y = y)
 }
 
 generate_clustered_data <- function(size, seed = 42) {
   set.seed(seed)
-  i <- 0:(size - 1)
-  x <- (i %/% 100) + (i %% 100) * 1e-6
-  y <- sin(x) + rnorm(size, 0, 0.1)
+  indices <- seq(0, size - 1, by = 1)
+  x <- as.numeric(indices %/% 100) + as.numeric(indices %% 100) * 1e-6
+  y <- sin(x) + rnorm(size, mean = 0.0, sd = 0.1)
   list(x = x, y = y)
 }
 
 generate_high_noise_data <- function(size, seed = 42) {
   set.seed(seed)
-  x <- seq(0, 10, length.out = size)
-  signal <- sin(x) * 0.5
-  noise <- rnorm(size, 0, 2.0)
-  list(x = x, y = signal + noise)
+  x <- seq(0, 10.0, length.out = size)
+  y <- sin(x) * 0.5 + rnorm(size, mean = 0.0, sd = 2.0)
+  list(x = x, y = y)
 }
 
 # ============================================================================
-# Main Execution
+# Benchmark Execution
 # ============================================================================
 
-main <- function() {
-  cat(paste(rep("=", 80), collapse = ""), "\n")
-  cat("FASTLOWESS R BENCHMARK SUITE (Aligned with Python)\n")
-  cat(paste(rep("=", 80), collapse = ""), "\n")
+run_benchmark <- function(name, size, func, iterations = 10, warmup = 2) {
+  # Warmup runs
+  for (i in 1:warmup) {
+    func()
+  }
 
-  iterations <- 10
-  all_results <- list()
+  # Timed runs
+  times <- numeric(iterations)
+  for (i in 1:iterations) {
+    start <- Sys.time()
+    func()
+    elapsed <- Sys.time() - start
+    times[i] <- as.numeric(elapsed) * 1000 # Convert to ms
+  }
 
-  # 1. Scalability
-  cat("\nSCALABILITY\n")
+  list(
+    name = name,
+    size = size,
+    iterations = iterations,
+    mean_time_ms = mean(times),
+    std_time_ms = sd(times),
+    median_time_ms = median(times),
+    min_time_ms = min(times),
+    max_time_ms = max(times)
+  )
+}
+
+# ============================================================================
+# Benchmark Categories
+# ============================================================================
+
+benchmark_scalability <- function(iterations = 10, parallel = TRUE) {
+  cat("\n", rep("=", 80), "\n", sep = "")
+  cat("SCALABILITY (Parallel=", parallel, ")\n", sep = "")
+  cat(rep("=", 80), "\n", sep = "")
+
+  results <- list()
   sizes <- c(1000, 5000, 10000, 50000, 100000)
-  scale_results <- list()
+
   for (size in sizes) {
-    data <- generate_sine_data(size)
-    res <- bench::mark(
-      fastlowess::smooth(data$x, data$y, fraction = 0.1, iterations = 3L),
-      iterations = iterations, check = FALSE
-    )
-    scale_results[[length(scale_results) + 1]] <- list(
-      name = paste0("scale_", size), size = size, iterations = iterations,
-      mean_time_ms = as.numeric(res$median) * 1000,
-      median_time_ms = as.numeric(res$median) * 1000,
-      min_time_ms = as.numeric(res$min) * 1000,
-      max_time_ms = as.numeric(max(res$time[[1]])) * 1000
-    )
-    cat(sprintf("  scale_%d: %.2f ms\n", size, as.numeric(res$median) * 1000))
-  }
-  all_results$scalability <- scale_results
+    data <- generate_sine_data(size, seed = 42)
 
-  # 2. Fraction
-  cat("\nFRACTION\n")
-  data <- generate_sine_data(5000)
+    run_func <- function() {
+      smooth(
+        data$x, data$y,
+        fraction = 0.1,
+        iterations = 3L,
+        scaling_method = "mar",
+        boundary_policy = "noboundary",
+        parallel = parallel
+      )
+    }
+
+    result <- run_benchmark(paste0("scale_", size), size, run_func, iterations)
+    results[[length(results) + 1]] <- result
+    cat(sprintf(
+      "  scale_%d: %.4f ms ± %.4f ms\n",
+      size, result$mean_time_ms, result$std_time_ms
+    ))
+  }
+
+  results
+}
+
+benchmark_fraction <- function(iterations = 10, parallel = TRUE) {
+  cat("\n", rep("=", 80), "\n", sep = "")
+  cat("FRACTION (Parallel=", parallel, ")\n", sep = "")
+  cat(rep("=", 80), "\n", sep = "")
+
+  results <- list()
+  size <- 5000
   fractions <- c(0.05, 0.1, 0.2, 0.3, 0.5, 0.67)
-  frac_results <- list()
-  for (f in fractions) {
-    res <- bench::mark(
-      fastlowess::smooth(data$x, data$y, fraction = f, iterations = 3L),
-      iterations = iterations, check = FALSE
-    )
-    frac_results[[length(frac_results) + 1]] <- list(
-      name = paste0("fraction_", f), size = 5000, iterations = iterations,
-      mean_time_ms = as.numeric(res$median) * 1000,
-      median_time_ms = as.numeric(res$median) * 1000,
-      min_time_ms = as.numeric(res$min) * 1000,
-      max_time_ms = as.numeric(max(res$time[[1]])) * 1000
-    )
-    cat(sprintf("  fraction_%.2f: %.2f ms\n", f, as.numeric(res$median) * 1000))
-  }
-  all_results$fraction <- frac_results
+  data <- generate_sine_data(size, seed = 42)
 
-  # 3. Iterations
-  cat("\nITERATIONS\n")
-  data <- generate_outlier_data(5000)
-  iters <- c(0, 1, 2, 3, 5, 10)
-  iter_results <- list()
-  for (it in iters) {
-    res <- bench::mark(
-      fastlowess::smooth(data$x, data$y, fraction = 0.2, iterations = as.integer(it)),
-      iterations = iterations, check = FALSE
-    )
-    iter_results[[length(iter_results) + 1]] <- list(
-      name = paste0("iterations_", it), size = 5000, iterations = iterations,
-      mean_time_ms = as.numeric(res$median) * 1000,
-      median_time_ms = as.numeric(res$median) * 1000,
-      min_time_ms = as.numeric(res$min) * 1000,
-      max_time_ms = as.numeric(max(res$time[[1]])) * 1000
-    )
-    cat(sprintf("  iterations_%d: %.2f ms\n", it, as.numeric(res$median) * 1000))
-  }
-  all_results$iterations <- iter_results
+  for (frac in fractions) {
+    run_func <- function() {
+      smooth(
+        data$x, data$y,
+        fraction = frac,
+        iterations = 3L,
+        scaling_method = "mar",
+        boundary_policy = "noboundary",
+        parallel = parallel
+      )
+    }
 
-  # 4. Delta
-  cat("\nDELTA\n")
-  data <- generate_sine_data(10000)
-  deltas <- list(list("delta_none", 0.0), list("delta_small", 0.5), list("delta_medium", 2.0), list("delta_large", 10.0))
-  delta_results <- list()
-  for (d in deltas) {
-    res <- bench::mark(
-      fastlowess::smooth(data$x, data$y, fraction = 0.2, iterations = 2L, delta = d[[2]]),
-      iterations = iterations, check = FALSE
-    )
-    delta_results[[length(delta_results) + 1]] <- list(
-      name = d[[1]], size = 10000, iterations = iterations,
-      mean_time_ms = as.numeric(res$median) * 1000,
-      median_time_ms = as.numeric(res$median) * 1000,
-      min_time_ms = as.numeric(res$min) * 1000,
-      max_time_ms = as.numeric(max(res$time[[1]])) * 1000
-    )
-    cat(sprintf("  %s: %.2f ms\n", d[[1]], as.numeric(res$median) * 1000))
+    result <- run_benchmark(paste0("fraction_", frac), size, run_func, iterations)
+    results[[length(results) + 1]] <- result
+    cat(sprintf(
+      "  fraction_%.2f: %.4f ms ± %.4f ms\n",
+      frac, result$mean_time_ms, result$std_time_ms
+    ))
   }
-  all_results$delta <- delta_results
 
-  # 5. Financial
-  cat("\nFINANCIAL\n")
-  fin_results <- list()
-  for (size in c(500, 1000, 5000, 10000)) {
-    data <- generate_financial_data(size)
-    res <- bench::mark(
-      fastlowess::smooth(data$x, data$y, fraction = 0.1, iterations = 2L),
-      iterations = iterations, check = FALSE
-    )
-    fin_results[[length(fin_results) + 1]] <- list(
-      name = paste0("financial_", size), size = size, iterations = iterations,
-      mean_time_ms = as.numeric(res$median) * 1000,
-      median_time_ms = as.numeric(res$median) * 1000,
-      min_time_ms = as.numeric(res$min) * 1000,
-      max_time_ms = as.numeric(max(res$time[[1]])) * 1000
-    )
-    cat(sprintf("  financial_%d: %.2f ms\n", size, as.numeric(res$median) * 1000))
+  results
+}
+
+benchmark_iterations <- function(iterations = 10, parallel = TRUE) {
+  cat("\n", rep("=", 80), "\n", sep = "")
+  cat("ITERATIONS (Parallel=", parallel, ")\n", sep = "")
+  cat(rep("=", 80), "\n", sep = "")
+
+  results <- list()
+  size <- 5000
+  iter_values <- c(0, 1, 2, 3, 5, 10)
+  data <- generate_outlier_data(size, seed = 42)
+
+  for (it in iter_values) {
+    run_func <- function() {
+      smooth(
+        data$x, data$y,
+        fraction = 0.2,
+        iterations = as.integer(it),
+        scaling_method = "mar",
+        boundary_policy = "noboundary",
+        parallel = parallel
+      )
+    }
+
+    result <- run_benchmark(paste0("iterations_", it), size, run_func, iterations)
+    results[[length(results) + 1]] <- result
+    cat(sprintf(
+      "  iterations_%d: %.4f ms ± %.4f ms\n",
+      it, result$mean_time_ms, result$std_time_ms
+    ))
   }
-  all_results$financial <- fin_results
 
-  # 6. Scientific
-  cat("\nSCIENTIFIC\n")
-  sci_results <- list()
-  for (size in c(500, 1000, 5000, 10000)) {
-    data <- generate_scientific_data(size)
-    res <- bench::mark(
-      fastlowess::smooth(data$x, data$y, fraction = 0.15, iterations = 3L),
-      iterations = iterations, check = FALSE
-    )
-    sci_results[[length(sci_results) + 1]] <- list(
-      name = paste0("scientific_", size), size = size, iterations = iterations,
-      mean_time_ms = as.numeric(res$median) * 1000,
-      median_time_ms = as.numeric(res$median) * 1000,
-      min_time_ms = as.numeric(res$min) * 1000,
-      max_time_ms = as.numeric(max(res$time[[1]])) * 1000
-    )
-    cat(sprintf("  scientific_%d: %.2f ms\n", size, as.numeric(res$median) * 1000))
+  results
+}
+
+benchmark_delta <- function(iterations = 10, parallel = TRUE) {
+  cat("\n", rep("=", 80), "\n", sep = "")
+  cat("DELTA (Parallel=", parallel, ")\n", sep = "")
+  cat(rep("=", 80), "\n", sep = "")
+
+  results <- list()
+  size <- 10000
+  data <- generate_sine_data(size, seed = 42)
+
+  delta_configs <- list(
+    list(name = "delta_none", delta = 0.0),
+    list(name = "delta_small", delta = 0.5),
+    list(name = "delta_medium", delta = 2.0),
+    list(name = "delta_large", delta = 10.0)
+  )
+
+  for (config in delta_configs) {
+    run_func <- function() {
+      smooth(
+        data$x, data$y,
+        fraction = 0.2,
+        iterations = 2L,
+        delta = config$delta,
+        scaling_method = "mar",
+        boundary_policy = "noboundary",
+        parallel = parallel
+      )
+    }
+
+    result <- run_benchmark(config$name, size, run_func, iterations)
+    results[[length(results) + 1]] <- result
+    cat(sprintf(
+      "  %s: %.4f ms ± %.4f ms\n",
+      config$name, result$mean_time_ms, result$std_time_ms
+    ))
   }
-  all_results$scientific <- sci_results
 
-  # 7. Genomic
-  cat("\nGENOMIC\n")
-  gen_results <- list()
-  for (size in c(1000, 5000, 10000, 50000)) {
-    data <- generate_genomic_data(size)
-    res <- bench::mark(
-      fastlowess::smooth(data$x, data$y, fraction = 0.1, iterations = 3L, delta = 100.0),
-      iterations = iterations, check = FALSE
-    )
-    gen_results[[length(gen_results) + 1]] <- list(
-      name = paste0("genomic_", size), size = size, iterations = iterations,
-      mean_time_ms = as.numeric(res$median) * 1000,
-      median_time_ms = as.numeric(res$median) * 1000,
-      min_time_ms = as.numeric(res$min) * 1000,
-      max_time_ms = as.numeric(max(res$time[[1]])) * 1000
-    )
-    cat(sprintf("  genomic_%d: %.2f ms\n", size, as.numeric(res$median) * 1000))
+  results
+}
+
+benchmark_financial <- function(iterations = 10, parallel = TRUE) {
+  cat("\n", rep("=", 80), "\n", sep = "")
+  cat("FINANCIAL (Parallel=", parallel, ")\n", sep = "")
+  cat(rep("=", 80), "\n", sep = "")
+
+  results <- list()
+  sizes <- c(500, 1000, 5000, 10000)
+
+  for (size in sizes) {
+    data <- generate_financial_data(size, seed = 42)
+
+    run_func <- function() {
+      smooth(
+        data$x, data$y,
+        fraction = 0.1,
+        iterations = 2L,
+        scaling_method = "mar",
+        boundary_policy = "noboundary",
+        parallel = parallel
+      )
+    }
+
+    result <- run_benchmark(paste0("financial_", size), size, run_func, iterations)
+    results[[length(results) + 1]] <- result
+    cat(sprintf(
+      "  financial_%d: %.4f ms ± %.4f ms\n",
+      size, result$mean_time_ms, result$std_time_ms
+    ))
   }
-  all_results$genomic <- gen_results
 
-  # 8. Pathological
-  cat("\nPATHOLOGICAL\n")
-  path_results <- list()
+  results
+}
+
+benchmark_scientific <- function(iterations = 10, parallel = TRUE) {
+  cat("\n", rep("=", 80), "\n", sep = "")
+  cat("SCIENTIFIC (Parallel=", parallel, ")\n", sep = "")
+  cat(rep("=", 80), "\n", sep = "")
+
+  results <- list()
+  sizes <- c(500, 1000, 5000, 10000)
+
+  for (size in sizes) {
+    data <- generate_scientific_data(size, seed = 42)
+
+    run_func <- function() {
+      smooth(
+        data$x, data$y,
+        fraction = 0.15,
+        iterations = 3L,
+        scaling_method = "mar",
+        boundary_policy = "noboundary",
+        parallel = parallel
+      )
+    }
+
+    result <- run_benchmark(paste0("scientific_", size), size, run_func, iterations)
+    results[[length(results) + 1]] <- result
+    cat(sprintf(
+      "  scientific_%d: %.4f ms ± %.4f ms\n",
+      size, result$mean_time_ms, result$std_time_ms
+    ))
+  }
+
+  results
+}
+
+benchmark_genomic <- function(iterations = 10, parallel = TRUE) {
+  cat("\n", rep("=", 80), "\n", sep = "")
+  cat("GENOMIC (Parallel=", parallel, ")\n", sep = "")
+  cat(rep("=", 80), "\n", sep = "")
+
+  results <- list()
+  sizes <- c(1000, 5000, 10000, 50000)
+
+  for (size in sizes) {
+    data <- generate_genomic_data(size, seed = 42)
+
+    run_func <- function() {
+      smooth(
+        data$x, data$y,
+        fraction = 0.1,
+        iterations = 3L,
+        delta = 100.0,
+        scaling_method = "mar",
+        boundary_policy = "noboundary",
+        parallel = parallel
+      )
+    }
+
+    result <- run_benchmark(paste0("genomic_", size), size, run_func, iterations)
+    results[[length(results) + 1]] <- result
+    cat(sprintf(
+      "  genomic_%d: %.4f ms ± %.4f ms\n",
+      size, result$mean_time_ms, result$std_time_ms
+    ))
+  }
+
+  results
+}
+
+benchmark_pathological <- function(iterations = 10, parallel = TRUE) {
+  cat("\n", rep("=", 80), "\n", sep = "")
+  cat("PATHOLOGICAL (Parallel=", parallel, ")\n", sep = "")
+  cat(rep("=", 80), "\n", sep = "")
+
+  results <- list()
   size <- 5000
 
   # Clustered
-  data <- generate_clustered_data(size)
-  res <- bench::mark(fastlowess::smooth(data$x, data$y, fraction = 0.3, iterations = 2L), iterations = iterations, check = FALSE)
-  path_results[[1]] <- list(name = "clustered", size = size, iterations = iterations, mean_time_ms = as.numeric(res$median) * 1000, median_time_ms = as.numeric(res$median) * 1000, min_time_ms = as.numeric(res$min) * 1000, max_time_ms = as.numeric(max(res$time[[1]])) * 1000)
+  data_clustered <- generate_clustered_data(size, seed = 42)
+  result <- run_benchmark(
+    "clustered", size,
+    function() {
+      smooth(
+        data_clustered$x, data_clustered$y,
+        fraction = 0.3, iterations = 2L,
+        scaling_method = "mar", boundary_policy = "noboundary", parallel = parallel
+      )
+    },
+    iterations
+  )
+  results[[length(results) + 1]] <- result
+  cat(sprintf(
+    "  clustered: %.4f ms ± %.4f ms\n",
+    result$mean_time_ms, result$std_time_ms
+  ))
 
-  # High Noise
-  data <- generate_high_noise_data(size)
-  res <- bench::mark(fastlowess::smooth(data$x, data$y, fraction = 0.5, iterations = 5L), iterations = iterations, check = FALSE)
-  path_results[[2]] <- list(name = "high_noise", size = size, iterations = iterations, mean_time_ms = as.numeric(res$median) * 1000, median_time_ms = as.numeric(res$median) * 1000, min_time_ms = as.numeric(res$min) * 1000, max_time_ms = as.numeric(max(res$time[[1]])) * 1000)
+  # High noise
+  data_noisy <- generate_high_noise_data(size, seed = 42)
+  result <- run_benchmark(
+    "high_noise", size,
+    function() {
+      smooth(
+        data_noisy$x, data_noisy$y,
+        fraction = 0.5, iterations = 5L,
+        scaling_method = "mar", boundary_policy = "noboundary", parallel = parallel
+      )
+    },
+    iterations
+  )
+  results[[length(results) + 1]] <- result
+  cat(sprintf(
+    "  high_noise: %.4f ms ± %.4f ms\n",
+    result$mean_time_ms, result$std_time_ms
+  ))
 
-  # Extreme Outliers
-  data <- generate_outlier_data(size)
-  res <- bench::mark(fastlowess::smooth(data$x, data$y, fraction = 0.2, iterations = 10L), iterations = iterations, check = FALSE)
-  path_results[[3]] <- list(name = "extreme_outliers", size = size, iterations = iterations, mean_time_ms = as.numeric(res$median) * 1000, median_time_ms = as.numeric(res$median) * 1000, min_time_ms = as.numeric(res$min) * 1000, max_time_ms = as.numeric(max(res$time[[1]])) * 1000)
+  # Extreme outliers
+  data_outlier <- generate_outlier_data(size, seed = 42)
+  result <- run_benchmark(
+    "extreme_outliers", size,
+    function() {
+      smooth(
+        data_outlier$x, data_outlier$y,
+        fraction = 0.2, iterations = 10L,
+        scaling_method = "mar", boundary_policy = "noboundary", parallel = parallel
+      )
+    },
+    iterations
+  )
+  results[[length(results) + 1]] <- result
+  cat(sprintf(
+    "  extreme_outliers: %.4f ms ± %.4f ms\n",
+    result$mean_time_ms, result$std_time_ms
+  ))
 
-  # Constant Y
-  data <- list(x = as.numeric(0:(size - 1)), y = rep(5.0, size))
-  res <- bench::mark(fastlowess::smooth(data$x, data$y, fraction = 0.2, iterations = 2L), iterations = iterations, check = FALSE)
-  path_results[[4]] <- list(name = "constant_y", size = size, iterations = iterations, mean_time_ms = as.numeric(res$median) * 1000, median_time_ms = as.numeric(res$median) * 1000, min_time_ms = as.numeric(res$min) * 1000, max_time_ms = as.numeric(max(res$time[[1]])) * 1000)
+  # Constant y
+  x_const <- seq(0, size - 1, by = 1)
+  y_const <- rep(5.0, size)
+  result <- run_benchmark(
+    "constant_y", size,
+    function() {
+      smooth(
+        x_const, y_const,
+        fraction = 0.2, iterations = 2L,
+        scaling_method = "mar", boundary_policy = "noboundary", parallel = parallel
+      )
+    },
+    iterations
+  )
+  results[[length(results) + 1]] <- result
+  cat(sprintf(
+    "  constant_y: %.4f ms ± %.4f ms\n",
+    result$mean_time_ms, result$std_time_ms
+  ))
 
-  all_results$pathological <- path_results
-
-  # Save to benchmarks/output directory
-  # Find centralized benchmarks/output directory
-  if (dir.exists("benchmarks/output")) {
-    final_output_dir <- "benchmarks/output"
-  } else if (file.exists("../compare_benchmark.py") && dir.exists("../output")) {
-    final_output_dir <- "../output"
-  } else {
-    final_output_dir <- "output"
-  }
-
-  if (!dir.exists(final_output_dir)) dir.create(final_output_dir, recursive = TRUE)
-  out_path <- file.path(final_output_dir, "fastLowess_benchmark.json")
-  write_json(all_results, out_path, auto_unbox = TRUE, pretty = TRUE)
-
-  cat("\n", paste(rep("=", 80), collapse = ""), "\n")
-  cat(sprintf("Results saved to %s\n", out_path))
-  cat(paste(rep("=", 80), collapse = ""), "\n")
+  results
 }
 
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+run_suite <- function(parallel, output_filename) {
+  cat("\n", rep("=", 80), "\n", sep = "")
+  cat("FASTLOWESS BENCHMARK SUITE (Parallel=", parallel, ")\n", sep = "")
+  cat("Output: ", output_filename, "\n", sep = "")
+  cat(rep("=", 80), "\n", sep = "")
+
+  iterations <- 25 # Reduced from 50 to save time double running
+
+  # Run all benchmark categories
+  all_results <- list(
+    scalability = benchmark_scalability(iterations, parallel),
+    fraction = benchmark_fraction(iterations, parallel),
+    iterations = benchmark_iterations(iterations, parallel),
+    delta = benchmark_delta(iterations, parallel),
+    financial = benchmark_financial(iterations, parallel),
+    scientific = benchmark_scientific(iterations, parallel),
+    genomic = benchmark_genomic(iterations, parallel),
+    pathological = benchmark_pathological(iterations, parallel)
+  )
+
+  # Save to output directory
+  script_dir <- dirname(sys.frame(1)$ofile)
+  if (is.null(script_dir) || script_dir == "") {
+    script_dir <- getwd()
+  }
+  benchmarks_dir <- dirname(script_dir)
+  out_dir <- file.path(benchmarks_dir, "output")
+  dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+
+  out_path <- file.path(out_dir, output_filename)
+  write_json(all_results, out_path, pretty = TRUE, auto_unbox = TRUE)
+
+  cat("\n", rep("=", 80), "\n", sep = "")
+  cat("Results saved to ", out_path, "\n", sep = "")
+  cat(rep("=", 80), "\n", sep = "")
+}
+
+main <- function() {
+  # Run Parallel (Standard)
+  run_suite(parallel = TRUE, output_filename = "fastlowess_benchmark.json")
+
+  # Run Serial
+  run_suite(parallel = FALSE, output_filename = "fastlowess_benchmark_serial.json")
+}
+
+# Execute main
 main()

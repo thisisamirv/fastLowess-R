@@ -1,9 +1,9 @@
-TARGET_DIR = ../target
+TARGET_DIR = @TARGET_DIR@
 LIBDIR = $(TARGET_DIR)/release
 STATLIB = $(LIBDIR)/libfastlowess.a
 
 # Linking flags (substituted by configure)
-PKG_LIBS = -L$(LIBDIR) @UNDEFINED_FLAGS@ -lfastlowess @GC_SECTIONS@
+PKG_LIBS = @UNDEFINED_FLAGS@ @GC_SECTIONS@
 
 all: clean
 

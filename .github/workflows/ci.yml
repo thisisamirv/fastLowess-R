@@ -168,3 +168,45 @@ jobs:
         with:
           name: bioc-check-results
           path: check
+
+  wasm-config-check:
+    name: WASM Configuration Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify WASM support in configure
+        run: |
+          echo "Checking WASM configuration in configure script..."
+
+          # Check that configure detects WASM build target
+          if grep -q "CARGO_BUILD_TARGET.*wasm32-unknown-emscripten" configure; then
+            echo "✅ WASM build target detection found in configure"
+          else
+            echo "❌ ERROR: WASM build target detection missing from configure"
+            exit 1
+          fi
+
+          # Check that configure sets ./target for WASM
+          if grep -q 'TARGET_DIR="./target"' configure; then
+            echo "✅ WASM target directory (./target) configured"
+          else
+            echo "❌ ERROR: WASM target directory not configured in configure"
+            exit 1
+          fi
+
+          # Test that configure generates correct Makevars for WASM
+          export CARGO_BUILD_TARGET=wasm32-unknown-emscripten
+          chmod +x configure
+          ./configure
+
+          if grep -q "TARGET_DIR = ./target" src/Makevars; then
+            echo "✅ Makevars generated with correct WASM target directory"
+          else
+            echo "❌ ERROR: Makevars not generated correctly for WASM"
+            cat src/Makevars
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ All WASM configuration checks passed!"

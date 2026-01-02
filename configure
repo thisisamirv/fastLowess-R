@@ -4,17 +4,24 @@
 # This script configures the package for cross-platform builds
 UNAME=$(uname)
 
-# Default to Linux flags
-GC_SECTIONS="-Wl,--gc-sections"
-# On Linux, we need -u flags to prevent symbol stripping
-UNDEFINED_FLAGS="-Wl,-u,R_init_fastlowess -Wl,-u,wrap__smooth -Wl,-u,wrap__smooth_streaming -Wl,-u,wrap__smooth_online"
+# Default target directory
+TARGET_DIR="../target"
 
-if [ "$UNAME" = "Darwin" ]; then
-    echo "Configuring for macOS..."
-    # On macOS, use -all_load to force all symbols from static library to be included
-    # This is necessary because the dynamic linker strips unused symbols
+# Default to Linux flags - use whole-archive to include all symbols from our library
+GC_SECTIONS=""
+UNDEFINED_FLAGS="-Wl,--whole-archive,${TARGET_DIR}/release/libfastlowess.a -Wl,--no-whole-archive"
+
+# Check for WASM build (R-universe sets CARGO_BUILD_TARGET)
+if [ "$CARGO_BUILD_TARGET" = "wasm32-unknown-emscripten" ]; then
+    echo "Configuring for WebAssembly..."
+    TARGET_DIR="./target"
     GC_SECTIONS=""
-    UNDEFINED_FLAGS="-Wl,-all_load"
+    UNDEFINED_FLAGS="-L${TARGET_DIR}/release -lfastlowess"
+elif [ "$UNAME" = "Darwin" ]; then
+    echo "Configuring for macOS..."
+    # On macOS, use -force_load with explicit path to include only needed symbols
+    GC_SECTIONS=""
+    UNDEFINED_FLAGS="-Wl,-force_load,${TARGET_DIR}/release/libfastlowess.a"
 else
     echo "Configuring for Linux/Unix..."
 fi
@@ -30,6 +37,7 @@ fi
 # Substitute variables in src/Makevars.in
 sed -e "s|@GC_SECTIONS@|${GC_SECTIONS}|g" \
     -e "s|@UNDEFINED_FLAGS@|${UNDEFINED_FLAGS}|g" \
+    -e "s|@TARGET_DIR@|${TARGET_DIR}|g" \
     src/Makevars.in > src/Makevars
 
 # Ensure final newline

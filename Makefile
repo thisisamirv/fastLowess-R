@@ -57,8 +57,15 @@ help:
 
 build: build-rust build-r
 
+# Extract vendor from tar.xz if needed (for local development)
+vendor-extract:
+	@if [ -f src/vendor.tar.xz ] && [ ! -d src/vendor ]; then \
+		echo "Extracting vendored dependencies..."; \
+		(cd src && tar --extract --xz -f vendor.tar.xz); \
+	fi
+
 # Build Rust crate (release mode by default for package)
-build-rust:
+build-rust: vendor-extract
 	@echo "Building Rust crate..."
 	@(cd src && cargo build --config cargo/config.toml --release)
 
@@ -137,14 +144,14 @@ coverage:
 # Code Quality (Rust & R)
 # ==============================================================================
 
-fmt:
+fmt: vendor-extract
 	@echo "Rust formatting..."
 	@(cd src && cargo fmt --all -- --check || (echo "Run 'make fmt-fix' to fix"; exit 1))
 
-fmt-fix:
+fmt-fix: vendor-extract
 	@(cd src && cargo fmt --all)
 
-clippy:
+clippy: vendor-extract
 	@echo "Rust clippy..."
 	@(cd src && cargo clippy --config cargo/config.toml --all-targets -- -D warnings)
 
@@ -178,19 +185,23 @@ vendor-update:
 	@echo "Updating and re-vendoring crates.io dependencies..."
 	@sed -i 's|fastLowess = { path = "vendor/fastLowess",|fastLowess = {|g' src/Cargo.toml
 	@sed -i '/\[patch.crates-io\]/,/lowess = { path = "vendor\/lowess" }/d' src/Cargo.toml
-	@rm -rf src/vendor
+	@rm -rf src/vendor src/vendor.tar.xz
 	@(cd src && cargo vendor vendor)
 	@./scripts/clean_checksums.py src/vendor
 	@sed -i 's|fastLowess = {|fastLowess = { path = "vendor/fastLowess",|g' src/Cargo.toml
 	@echo "" >> src/Cargo.toml
 	@echo "[patch.crates-io]" >> src/Cargo.toml
 	@echo "lowess = { path = \"vendor/lowess\" }" >> src/Cargo.toml
-	@echo "Vendor update complete."
+	@echo "Creating vendor.tar.xz archive..."
+	@(cd src && tar --sort=name --mtime='1970-01-01 00:00:00Z' --owner=0 --group=0 --numeric-owner --xz --create --file=vendor.tar.xz vendor)
+	@rm -rf src/vendor
+	@echo "Vendor update complete. Archive: src/vendor.tar.xz"
 
 clean: clean-rust clean-r
 
 clean-rust:
-	@(cd src && cargo clean)
+	@(cd src && cargo clean 2>/dev/null || true)
+	@rm -rf src/vendor
 	@rm -rf src/Cargo.lock
 	@rm -rf target
 

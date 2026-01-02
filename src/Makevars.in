@@ -12,6 +12,10 @@ $(SHLIB): $(STATLIB)
 $(STATLIB):
 	cargo --version
 	rustc --version
+	# Extract vendored dependencies if archive exists and vendor dir doesn't
+	if [ -f vendor.tar.xz ] && [ ! -d vendor ]; then \
+		tar --extract --xz -f vendor.tar.xz; \
+	fi
 	cargo build --release --manifest-path=Cargo.toml --target-dir $(TARGET_DIR) --config cargo/config.toml
 
 clean:

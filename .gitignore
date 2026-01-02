@@ -37,15 +37,9 @@ tarpaulin-report.html
 *.tar.gz
 *.Rcheck
 *.pdf
-# Top-level vendor/ and .cargo/ are no longer used (moved to src/)
-# but we keep them ignored just in case.
 /vendor/
 /.cargo/
-
-# IMPORTANT: Do NOT ignore src/vendor or src/cargo
-# They are required for CRAN-compliant, self-contained builds.
-!src/vendor/
-!src/cargo/
+src/vendor/
 /doc/
 /Meta/
 src/Makevars

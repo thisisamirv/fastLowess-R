@@ -1,12 +1,18 @@
 Package: fastlowess
 Title: Rust-Based LOWESS Smoothing
-Version: 0.4.0
+Version: 0.99.0
 Authors@R: person("Amir", "Valizadeh", email = "thisisamirv@gmail.com", role = c("aut", "cre"))
 Description: Provides high-performance LOWESS smoothing (Locally Weighted Scatterplot Smoothing) 
     using a Rust backend. Supports various weight functions, robustness iterations, 
-    streaming/online processing, and cross-validation.
+    streaming/online processing, cross-validation, and uncertainty quantification.
+    Applicable to genomic data, time series, and general-purpose smoothing tasks.
 License: MIT + file LICENSE-MIT | Apache License 2.0 + file LICENSE-APACHE
 SystemRequirements: Cargo (Rust's package manager), rustc (only required when installing from source)
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.2.3
+biocViews: Preprocessing, Smoothing, StatisticalMethod, Regression
+Suggests: BiocStyle, knitr, rmarkdown, testthat (>= 3.0.0)
+VignetteBuilder: knitr
+BugReports: https://github.com/thisisamirv/fastLowess-R/issues
+URL: https://github.com/thisisamirv/fastLowess-R

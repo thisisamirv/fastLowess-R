@@ -46,3 +46,5 @@ tarpaulin-report.html
 # They are required for CRAN-compliant, self-contained builds.
 !src/vendor/
 !src/cargo/
+/doc/
+/Meta/

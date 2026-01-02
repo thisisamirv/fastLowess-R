@@ -33,3 +33,6 @@ target/
 ^fastlowess_.*\.tar\.gz$
 ^\.Rbuildignore$
 ^cran-comments\.md$
+^bioc-comments\.md$
+^doc$
+^Meta$

@@ -7,7 +7,7 @@
 
 ## Features
 
-- **Parallel by Default**: Multi-core regression fits via [rayon](https://crates.io/crates/rayon), achieving substantial speedups on large datasets.
+- **Parallel by Default**: Multi-core regression fits via rayon, achieving substantial speedups on large datasets.
 - **Robust Statistics**: MAD-based scale estimation and IRLS with Bisquare, Huber, or Talwar weighting.
 - **Uncertainty Quantification**: Point-wise standard errors, confidence intervals, and prediction intervals.
 - **Optimized Performance**: Delta optimization for skipping dense regions and streaming/online modes.
@@ -63,68 +63,64 @@ The factor 1.4826 = 1/Phi^-1(3/4) ensures consistency with the standard deviatio
 
 ## Performance Advantages
 
-The `fastlowess` R package demonstrates massive performance gains over R's `stats::lowess`. The benchmarks compare `fastlowess` (both Serial and Parallel execution modes) against this standard implementation.
+The `fastlowess` R package demonstrates significant performance gains over R's `stats::lowess`. The benchmarks compare `fastlowess` (both Serial and Parallel execution modes) against the standard R implementation.
 
-The results show that `fastlowess` is the decisive winner across all benchmarks, achieving an **average speedup of 280x** and a **maximum speedup of 1169x**.
+The results show that `fastlowess` consistently outperforms `stats::lowess`, achieving speedups ranging from **1.1x to 6.8x**, with an **average speedup of approximately 2.3x**.
 
-The table below shows speedups relative to the **statsmodels baseline**.
+The table below shows speedups relative to the **R `stats::lowess` baseline**.
 
-| Name                  | statsmodels |      R      |  fastlowess   |
-|-----------------------|-------------|-------------|---------------|
-| clustered             |  162.77ms   |  [82.8x]²   |  [170-432x]¹  |
-| constant_y            |  133.63ms   |  [92.3x]²   |  [176-372x]¹  |
-| delta_large           |   0.51ms    |   [0.8x]²   |  [3.3-2.0x]¹  |
-| delta_medium          |   0.79ms    |   [1.3x]²   |  [3.7-3.3x]¹  |
-| delta_none            |  414.86ms   |   [2.5x]²   |  [3.2-16x]¹   |
-| delta_small           |   1.45ms    |   [1.7x]²   |  [3.6-4.4x]¹  |
-| extreme_outliers      |  488.96ms   |  [106.4x]²  |  [168-373x]¹  |
-| financial_1000        |   13.55ms   |  [76.6x]²   |  [135-105x]¹  |
-| financial_10000       |  302.20ms   |  [168.3x]²  |  [379-480x]¹  |
-| financial_500         |   6.49ms    |  [58.0x]¹   |   [92-54x]²   |
-| financial_5000        |  103.94ms   |  [117.3x]²  |  [252-336x]¹  |
-| fraction_0.05         |  122.00ms   |  [177.6x]²  |  [376-274x]¹  |
-| fraction_0.1          |  140.59ms   |  [112.8x]²  |  [252-219x]¹  |
-| fraction_0.2          |  181.57ms   |  [85.3x]²   |  [180-283x]¹  |
-| fraction_0.3          |  220.98ms   |  [84.8x]²   |  [151-304x]¹  |
-| fraction_0.5          |  296.47ms   |  [80.9x]²   |  [125-366x]¹  |
-| fraction_0.67         |  362.59ms   |  [83.1x]²   |  [115-428x]¹  |
-| genomic_1000          |   17.82ms   |  [15.9x]²   |   [16-23x]¹   |
-| genomic_10000         |  399.90ms   |   [3.6x]²   |  [4.5-18x]¹   |
-| genomic_5000          |  138.49ms   |   [5.0x]²   |  [6.1-21x]¹   |
-| genomic_50000         |  6776.57ms  |   [2.4x]²   |  [3.1-12x]¹   |
-| high_noise            |  435.85ms   |  [132.6x]²  |  [118-381x]¹  |
-| iterations_0          |   45.18ms   |  [128.4x]²  |  [212-497x]¹  |
-| iterations_1          |   94.10ms   |  [114.3x]²  |  [195-460x]¹  |
-| iterations_10         |  495.65ms   |  [116.0x]²  |  [172-428x]¹  |
-| iterations_2          |  135.48ms   |  [109.0x]²  |  [180-399x]¹  |
-| iterations_3          |  181.56ms   |  [108.8x]²  |  [178-408x]¹  |
-| iterations_5          |  270.58ms   |  [110.4x]²  |  [174-356x]¹  |
-| scale_1000            |   17.95ms   |  [82.6x]¹   |  [131-51x]²   |
-| scale_10000           |  408.13ms   |  [178.1x]²  |  [378-270x]¹  |
-| scale_5000            |  139.81ms   |  [133.6x]²  |  [254-224x]¹  |
-| scale_50000           |  6798.58ms  |  [661.0x]²  | [987-1169x]¹  |
-| scientific_1000       |   19.04ms   |  [70.1x]²   |  [103-75x]¹   |
-| scientific_10000      |  479.57ms   |  [190.7x]²  |  [316-461x]¹  |
-| scientific_500        |   8.59ms    |  [49.6x]¹   |   [69-45x]²   |
-| scientific_5000       |  161.42ms   |  [124.9x]²  |  [205-273x]¹  |
-| scale_100000**        |      -      |      -      |    1-1.5x     |
+| Name                  |      R      |  fastlowess   |
+|-----------------------|-------------|---------------|
+| clustered             |   2.16ms    |   2.4-4.7x    |
+| constant_y            |   1.41ms    |   2.1-3.9x    |
+| delta_large           |   0.53ms    |   3.4-2.0x    |
+| delta_medium          |   0.73ms    |   3.3-2.8x    |
+| delta_none            |  164.35ms   |   1.5-6.8x    |
+| delta_small           |   0.97ms    |   2.6-3.3x    |
+| extreme_outliers      |   4.76ms    |   1.9-3.9x    |
+| financial_1000        |   0.18ms    |   1.8-1.2x    |
+| financial_10000       |   1.73ms    |   2.2-2.6x    |
+| financial_500         |   0.12ms    |   1.6-0.9x    |
+| financial_5000        |   1.00ms    |   2.6-2.7x    |
+| fraction_0.05         |   0.69ms    |   2.3-1.5x    |
+| fraction_0.1          |   1.07ms    |   2.0-2.6x    |
+| fraction_0.2          |   1.62ms    |   1.7-2.9x    |
+| fraction_0.3          |   2.24ms    |   1.7-3.4x    |
+| fraction_0.5          |   3.35ms    |   1.6-3.6x    |
+| fraction_0.67         |   4.33ms    |   1.6-4.2x    |
+| genomic_1000          |   1.14ms    |   1.2-1.4x    |
+| genomic_10000         |  111.74ms   |   1.5-5.3x    |
+| genomic_5000          |   27.73ms   |   1.4-4.3x    |
+| genomic_50000         |  2818.61ms  |   1.6-5.5x    |
+| high_noise            |   3.45ms    |   1.1-3.2x    |
+| iterations_0          |   0.36ms    |   1.9-2.6x    |
+| iterations_1          |   0.76ms    |   1.7-2.9x    |
+| iterations_10         |   4.33ms    |   1.7-2.6x    |
+| iterations_2          |   1.17ms    |   1.7-2.3x    |
+| iterations_3          |   1.60ms    |   1.7-2.6x    |
+| iterations_5          |   2.41ms    |   1.7-2.5x    |
+| scale_1000            |   0.21ms    |   1.5-1.0x    |
+| scale_10000           |   2.11ms    |   2.1-2.5x    |
+| scale_5000            |   0.99ms    |   1.9-2.4x    |
+| scale_50000           |   10.13ms   |   2.2-2.1x    |
+| scientific_1000       |   0.28ms    |   1.5-0.8x    |
+| scientific_10000      |   2.36ms    |   1.6-2.2x    |
+| scientific_500        |   0.15ms    |   1.3-0.6x    |
+| scientific_5000       |   1.22ms    |   1.6-1.7x    |
 
-\* **fastlowess**: Shows speedup range `[Serial-Parallel]`. E.g., `[12-48x]` means 12x speedup (Sequential) and 48x speedup (Parallel).
+\* **fastlowess**: Shows speedup range `[Serial-Parallel]`. E.g., `[2.0-2.5x]` means 2.0x speedup (Serial) and 2.5x speedup (Parallel).
 
-\*\* **Large Scale**: `fastlowess (Serial)` is the baseline (1x).
+**Key Takeaways**:
 
-¹ Winner (Fastest implementation)
-
-² Runner-up (Second fastest implementation)
-
-**Key Takeaways**::
-
-1. **Dominant Performance**: `fastlowess` is consistently the fastest implementation. Even in **Serial** mode, it significantly outperforms `stats::lowess`.
+1. **Consistent Performance Gains**: `fastlowess` is consistently faster than `stats::lowess` across all benchmark categories, with speedups ranging from 1.1x to 6.8x.
 2. **Parallel Scaling**:
-    - **Large Datasets**: Parallel execution provides massive gains. For example, `scale_50000` shows a jump from ~987x (Serial) to ~1169x (Parallel) speedup.
-    - **Small Datasets**: For very small datasets (e.g., `scale_1000`, `financial_500`), Serial execution is often faster than Parallel due to thread overhead (e.g., `[131-51x]`).
-3. **R vs Statsmodels**: `R` is a strong runner-up, generally ~80-150x faster than `statsmodels`, but `fastlowess` extends this lead further.
-4. **Handling Complex Cases**: `fastlowess` maintains its performance advantage even in pathological cases like `high_noise` and `extreme_outliers`.
+    - **Large Datasets**: Parallel execution provides significant gains. For example, `delta_none` shows a jump from 1.5x (Serial) to 6.8x (Parallel) speedup, and `genomic_10000` shows 1.5x to 5.3x.
+    - **Small Datasets**: For very small datasets (e.g., `scale_1000`, `financial_500`, `scientific_500`), Serial execution may be faster than Parallel due to thread overhead (e.g., `[1.5-1.0x]`, `[1.6-0.9x]`, `[1.3-0.6x]`).
+3. **Best Performance Scenarios**:
+    - **Delta optimization**: When delta is enabled (non-zero), speedups are moderate (2-3.5x). When delta is disabled (`delta_none`), parallel execution shines with up to 6.8x speedup.
+    - **Large-scale genomic data**: Shows excellent scaling with parallel execution (up to 5.5x for 50,000 points).
+    - **Pathological cases**: `fastlowess` maintains good performance even with challenging data like `extreme_outliers` (1.9-3.9x) and `high_noise` (1.1-3.2x).
+4. **Robustness Iterations**: Performance remains consistent across different iteration counts (1.7-2.9x speedup range), showing that `fastlowess` handles robustness efficiently.
 
 Check [Benchmarks for fastLowess](https://github.com/thisisamirv/fastLowess-R/tree/bench/benchmarks) for detailed results and reproducible benchmarking code.
 

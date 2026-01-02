@@ -10,6 +10,8 @@ all: clean
 $(SHLIB): $(STATLIB)
 
 $(STATLIB):
+	cargo --version
+	rustc --version
 	cargo build --release --manifest-path=Cargo.toml --target-dir $(TARGET_DIR) --config cargo/config.toml
 
 clean:

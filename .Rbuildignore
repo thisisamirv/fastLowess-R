@@ -38,3 +38,4 @@ target/
 ^bioc-comments\.md$
 ^doc$
 ^Meta$
+^_pkgdown\.yml$

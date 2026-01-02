@@ -48,3 +48,4 @@ tarpaulin-report.html
 !src/cargo/
 /doc/
 /Meta/
+src/Makevars

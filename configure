@@ -11,11 +11,10 @@ UNDEFINED_FLAGS="-Wl,-u,R_init_fastlowess -Wl,-u,wrap__smooth -Wl,-u,wrap__smoot
 
 if [ "$UNAME" = "Darwin" ]; then
     echo "Configuring for macOS..."
-    # On macOS, don't use -dead_strip or -u flags
-    # -dead_strip causes Rust symbols to be stripped
-    # -u with underscore prefix doesn't match Rust's symbol exports
+    # On macOS, use -all_load to force all symbols from static library to be included
+    # This is necessary because the dynamic linker strips unused symbols
     GC_SECTIONS=""
-    UNDEFINED_FLAGS=""
+    UNDEFINED_FLAGS="-Wl,-all_load"
 else
     echo "Configuring for Linux/Unix..."
 fi

@@ -143,6 +143,8 @@ jobs:
           toolchain: stable
           targets: x86_64-unknown-linux-gnu
 
+      - uses: r-lib/actions/setup-pandoc@v2
+
       - name: Install R dependencies
         run: |
           install.packages(c("remotes", "rcmdcheck"))
@@ -152,7 +154,7 @@ jobs:
         shell: Rscript {0}
 
       - name: Run R CMD check
-        run: rcmdcheck::rcmdcheck(args = c("--no-manual", "--as-cran"), error_on = "warning", check_dir = "check")
+        run: rcmdcheck::rcmdcheck(args = c("--no-manual", "--as-cran"), error_on = "error", check_dir = "check")
         shell: Rscript {0}
 
       - name: Run BiocCheck

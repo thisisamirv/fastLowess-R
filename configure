@@ -7,16 +7,39 @@ UNAME=$(uname)
 # Default target directory
 TARGET_DIR="../target"
 
-# Default to Linux flags - use whole-archive to include all symbols from our library
-GC_SECTIONS=""
-UNDEFINED_FLAGS="-Wl,--whole-archive,${TARGET_DIR}/release/libfastlowess.a -Wl,--no-whole-archive"
+# Robust WASM detection
+IS_WASM=0
 
-# Check for WASM build (R-universe sets CARGO_BUILD_TARGET)
-if [ "$CARGO_BUILD_TARGET" = "wasm32-unknown-emscripten" ]; then
+# 1. Check for CARGO_BUILD_TARGET or HOST variables
+if [ "$CARGO_BUILD_TARGET" = "wasm32-unknown-emscripten" ] || [ "$HOST" = "wasm32-unknown-emscripten" ] || [ "$TGT" = "wasm32-unknown-emscripten" ]; then
+    IS_WASM=1
+fi
+
+# 2. Check arguments for wasm32-unknown-emscripten
+for arg in "$@"; do
+    case "$arg" in
+        *wasm32-unknown-emscripten*)
+            IS_WASM=1
+            ;;
+    esac
+done
+
+# 3. Check environment for Emscripten clues (CC usually contains emcc)
+if [ "$IS_WASM" = "0" ]; then
+    if echo "$CC" | grep -q "emcc" || echo "$PATH" | grep -q "emscripten"; then
+        IS_WASM=1
+    fi
+fi
+
+if [ "$IS_WASM" = "1" ]; then
     echo "Configuring for WebAssembly..."
+    # For WASM/WebR, keep target dir local to avoid rwasm copy issues
     TARGET_DIR="./target"
-    GC_SECTIONS=""
-    UNDEFINED_FLAGS="-L${TARGET_DIR}/release -lfastlowess"
+    GC_SECTIONS="-Wl,--gc-sections"
+    # For WASM, do NOT use --whole-archive or legacy -u flags
+    # We add -s EXPORT_ALL=0 to prevent internal Rust symbols from causing errors
+    # and explicitly list our required entry points.
+    UNDEFINED_FLAGS="-L${TARGET_DIR}/release -lfastlowess -s EXPORT_ALL=0 -s EXPORTED_FUNCTIONS=['_R_init_fastlowess','_wrap__smooth','_wrap__smooth_streaming','_wrap__smooth_online']"
 elif [ "$UNAME" = "Darwin" ]; then
     echo "Configuring for macOS..."
     # On macOS, use -force_load with explicit path to include only needed symbols
@@ -24,13 +47,14 @@ elif [ "$UNAME" = "Darwin" ]; then
     UNDEFINED_FLAGS="-Wl,-force_load,${TARGET_DIR}/release/libfastlowess.a"
 else
     echo "Configuring for Linux/Unix..."
+    # Default to Linux flags - use whole-archive to include all symbols
+    GC_SECTIONS=""
+    UNDEFINED_FLAGS="-Wl,--whole-archive,${TARGET_DIR}/release/libfastlowess.a -Wl,--no-whole-archive"
 fi
 
 # Check if template exists
 if [ ! -f "src/Makevars.in" ]; then
     echo "ERROR: src/Makevars.in not found!"
-    echo "PWD: $(pwd)"
-    ls -F src/
     exit 1
 fi
 
@@ -44,3 +68,5 @@ sed -e "s|@GC_SECTIONS@|${GC_SECTIONS}|g" \
 echo "" >> src/Makevars
 
 echo "Generated src/Makevars"
+echo "Target Directory: ${TARGET_DIR}"
+echo "WASM detected: ${IS_WASM}"

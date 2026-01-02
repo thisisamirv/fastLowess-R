@@ -1,25 +1,15 @@
-# Detect WASM build environment (R-universe sets CARGO_BUILD_TARGET for WASM)
-ifeq ($(CARGO_BUILD_TARGET),wasm32-unknown-emscripten)
-	TARGET_DIR = ./target
-else
-	TARGET_DIR = ../target
-endif
-
+TARGET_DIR = ../target
 LIBDIR = $(TARGET_DIR)/release
 STATLIB = $(LIBDIR)/libfastlowess.a
 
 # Linking flags (substituted by configure)
 PKG_LIBS = -L$(LIBDIR) @UNDEFINED_FLAGS@ -lfastlowess @GC_SECTIONS@
 
-all: clean $(SHLIB)
+all: clean
 
 $(SHLIB): $(STATLIB)
 
 $(STATLIB):
-	@echo "Reporting Rust compiler versions:"
-	@cargo --version
-	@rustc --version
-	@mkdir -p $(TARGET_DIR)
 	cargo build --release --manifest-path=Cargo.toml --target-dir $(TARGET_DIR) --config cargo/config.toml
 
 clean:

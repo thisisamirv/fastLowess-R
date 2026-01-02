@@ -9,6 +9,8 @@ target/
 ^CHANGELOG\.md$
 ^CONTRIBUTING\.md$
 ^cran-comments\.md$
+^LICENSE-MIT$
+^LICENSE-APACHE$
 ^scripts$
 ^scripts/.*
 ^vendor$

@@ -6,12 +6,16 @@ UNAME=$(uname)
 
 # Default to Linux flags
 GC_SECTIONS="-Wl,--gc-sections"
-UNDEFINED_FLAGS=""
+# On Linux, we need -u flags to prevent symbol stripping
+UNDEFINED_FLAGS="-Wl,-u,R_init_fastlowess -Wl,-u,wrap__smooth -Wl,-u,wrap__smooth_streaming -Wl,-u,wrap__smooth_online"
 
 if [ "$UNAME" = "Darwin" ]; then
     echo "Configuring for macOS..."
-    # macOS uses -dead_strip instead of --gc-sections
-    GC_SECTIONS="-Wl,-dead_strip"
+    # On macOS, don't use -dead_strip or -u flags
+    # -dead_strip causes Rust symbols to be stripped
+    # -u with underscore prefix doesn't match Rust's symbol exports
+    GC_SECTIONS=""
+    UNDEFINED_FLAGS=""
 else
     echo "Configuring for Linux/Unix..."
 fi

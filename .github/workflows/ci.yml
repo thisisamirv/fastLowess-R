@@ -27,8 +27,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Fix permissions
+        shell: bash
         run: chmod +x configure cleanup
-        if: runner.os != 'Windows'
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable

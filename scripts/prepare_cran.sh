@@ -3,14 +3,24 @@ set -e
 
 echo "📦 Preparing package for CRAN submission..."
 
-# 1. Vendor Dependencies
-echo "   -> Vendoring Rust dependencies..."
-mkdir -p src/cargo
-(cd src && cargo vendor vendor > cargo/config.toml)
+# 1. Extract vendor archive if needed
+echo "   -> Extracting vendored dependencies..."
+if [ -f src/vendor.tar.xz ] && [ ! -d src/vendor ]; then
+    (cd src && tar --extract --xz -f vendor.tar.xz)
+fi
 
-# 2. Clean vendor: strip tests/benches/examples, fix checksums
-echo "   -> Cleaning vendor directory and fixing checksums..."
-python3 scripts/clean_checksums.py src/vendor
+# 2. Ensure cargo config exists
+mkdir -p src/cargo
+if [ ! -f src/cargo/config.toml ]; then
+    echo "   -> Creating cargo config..."
+    cat > src/cargo/config.toml << 'EOF'
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
+EOF
+fi
 
 # 3. Generate AUTHORS file
 echo "   -> Generating inst/AUTHORS..."

@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.85.0"
 name = "lowess"
-version = "0.6.0"
+version = "0.7.0"
 authors = ["Amir Valizadeh <thisisamirv@gmail.com>"]
 build = false
 include = [
@@ -21,7 +21,8 @@ include = [
     "docs/**/*.svg",
     "Cargo.toml",
     "README.md",
-    "LICENSE",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
     "CHANGELOG.md",
 ]
 autolib = false
@@ -44,7 +45,7 @@ categories = [
     "science",
     "algorithms",
 ]
-license = "AGPL-3.0-or-later"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/thisisamirv/lowess"
 
 [package.metadata.docs.rs]
@@ -57,19 +58,26 @@ rustdoc-args = [
 [features]
 default = ["std"]
 dev = []
-std = ["num-traits/std"]
+std = [
+    "num-traits/std",
+    "wide/std",
+]
 
 [lib]
 name = "lowess"
 path = "src/lib.rs"
 
 [dependencies.num-traits]
-version = "0.2"
+version = "0.2.19"
 features = ["libm"]
 default-features = false
 
+[dependencies.wide]
+version = "1.1.1"
+default-features = false
+
 [dev-dependencies.approx]
-version = "0.5"
+version = "0.5.1"
 
 [profile.release]
 opt-level = 3

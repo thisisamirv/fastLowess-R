@@ -4,7 +4,7 @@
 //!
 //! This layer provides pure mathematical functions used throughout LOWESS:
 //! - Kernel functions for distance-based weighting
-//! - Robust statistics (MAD)
+//! - Robust statistics (MAD/MAR)
 //!
 //! These are reusable mathematical building blocks with no algorithm-specific logic.
 //!
@@ -29,8 +29,8 @@
 /// Kernel (weight) functions for distance-based weighting.
 pub mod kernel;
 
-/// Median Absolute Deviation (MAD) computation.
-pub mod mad;
+/// Robust scale estimation (MAR/MAD).
+pub mod scaling;
 
 /// Boundary padding utilities.
 pub mod boundary;

@@ -14,6 +14,7 @@ smooth_streaming(
   delta = NULL,
   weight_function = "tricube",
   robustness_method = "bisquare",
+  scaling_method = "mad",
   boundary_policy = "extend",
   auto_converge = NULL,
   return_diagnostics = FALSE,
@@ -55,8 +56,11 @@ auto-calculates. Set to 0 to disable interpolation.}
 \item{robustness_method}{Method for computing robustness weights. Options:
 "bisquare" (default), "huber", "talwar".}
 
+\item{scaling_method}{Scaling method for robustness weight calculation.
+Options: "mad" (default), "mar" (Median Absolute Residual).}
+
 \item{boundary_policy}{Handling of edge effects. Options: "extend" (default),
-"reflect", "zero".}
+"reflect", "zero", "noboundary".}
 
 \item{auto_converge}{Tolerance for automatic convergence. NULL (default)
 disables.}

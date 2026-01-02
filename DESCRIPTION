@@ -1,11 +1,11 @@
 Package: fastlowess
 Title: Rust-Based LOWESS Smoothing
-Version: 0.3.0
+Version: 0.4.0
 Authors@R: person("Amir", "Valizadeh", email = "thisisamirv@gmail.com", role = c("aut", "cre"))
 Description: Provides high-performance LOWESS smoothing (Locally Weighted Scatterplot Smoothing) 
     using a Rust backend. Supports various weight functions, robustness iterations, 
     streaming/online processing, and cross-validation.
-License: AGPL-3 + file LICENSE
+License: MIT + file LICENSE-MIT | Apache License 2.0 + file LICENSE-APACHE
 SystemRequirements: Cargo (Rust's package manager), rustc (only required when installing from source)
 Encoding: UTF-8
 LazyData: true

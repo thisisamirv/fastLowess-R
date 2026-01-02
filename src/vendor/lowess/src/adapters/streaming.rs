@@ -44,21 +44,46 @@ use std::vec::Vec;
 
 // External dependencies
 use core::fmt::Debug;
+use core::mem::take;
 use num_traits::Float;
 
 // Internal dependencies
-use crate::algorithms::regression::ZeroWeightFallback;
+use crate::algorithms::regression::{WLSSolver, ZeroWeightFallback};
 use crate::algorithms::robustness::RobustnessMethod;
 use crate::engine::executor::{CVPassFn, FitPassFn, IntervalPassFn, SmoothPassFn};
 use crate::engine::executor::{LowessConfig, LowessExecutor};
 use crate::engine::output::LowessResult;
 use crate::engine::validator::Validator;
 use crate::evaluation::diagnostics::DiagnosticsState;
+use crate::math::boundary::BoundaryPolicy;
 use crate::math::kernel::WeightFunction;
+use crate::math::scaling::ScalingMethod;
 use crate::primitives::backend::Backend;
+use crate::primitives::buffer::{StreamingBuffer, VecExt};
 use crate::primitives::errors::LowessError;
-use crate::primitives::partition::{BoundaryPolicy, MergeStrategy};
 use crate::primitives::sorting::sort_by_x;
+
+// ============================================================================
+// Merge Strategy
+// ============================================================================
+
+/// Strategy for merging overlapping regions between streaming chunks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MergeStrategy {
+    /// Arithmetic mean of overlapping smoothed values: `(v1 + v2) / 2`.
+    Average,
+
+    /// Distance-based weights that favor values from the center of each chunk:
+    /// v1 * (1 - alpha) + v2 * alpha where `alpha` is the relative position within the overlap.
+    #[default]
+    WeightedAverage,
+
+    /// Use the value from the first chunk in processing order.
+    TakeFirst,
+
+    /// Use the value from the last chunk in processing order.
+    TakeLast,
+}
 
 // ============================================================================
 // Streaming LOWESS Builder
@@ -102,6 +127,9 @@ pub struct StreamingLowessBuilder<T: Float> {
 
     /// Whether to return residuals
     pub compute_residuals: bool,
+
+    /// Scaling method for robust scale estimation (MAR/MAD)
+    pub scaling_method: ScalingMethod,
 
     /// Whether to return diagnostics
     pub return_diagnostics: bool,
@@ -165,6 +193,7 @@ impl<T: Float> StreamingLowessBuilder<T> {
             zero_weight_fallback: ZeroWeightFallback::default(),
             merge_strategy: MergeStrategy::default(),
             compute_residuals: false,
+            scaling_method: ScalingMethod::default(),
             return_diagnostics: false,
             return_robustness_weights: false,
             auto_convergence: None,
@@ -339,12 +368,11 @@ impl<T: Float> StreamingLowessBuilder<T> {
         Validator::validate_overlap(self.overlap, self.chunk_size)?;
 
         let has_diag = self.return_diagnostics;
+        let overlap = self.overlap;
+        let chunk_size = self.chunk_size;
         Ok(StreamingLowess {
             config: self,
-            overlap_buffer_x: Vec::new(),
-            overlap_buffer_y: Vec::new(),
-            overlap_buffer_smoothed: Vec::new(),
-            overlap_buffer_robustness_weights: Vec::new(),
+            buffer: StreamingBuffer::with_capacity(overlap, chunk_size),
             diagnostics_state: if has_diag {
                 Some(DiagnosticsState::new())
             } else {
@@ -361,14 +389,12 @@ impl<T: Float> StreamingLowessBuilder<T> {
 /// Streaming LOWESS processor for large datasets.
 pub struct StreamingLowess<T: Float> {
     config: StreamingLowessBuilder<T>,
-    overlap_buffer_x: Vec<T>,
-    overlap_buffer_y: Vec<T>,
-    overlap_buffer_smoothed: Vec<T>,
-    overlap_buffer_robustness_weights: Vec<T>,
+    /// Pre-allocated overlap buffers
+    buffer: StreamingBuffer<T>,
     diagnostics_state: Option<DiagnosticsState<T>>,
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
+impl<T: Float + WLSSolver + Debug + Send + Sync + 'static> StreamingLowess<T> {
     /// Process a chunk of data.
     pub fn process_chunk(&mut self, x: &[T], y: &[T]) -> Result<LowessResult<T>, LowessError> {
         // Validate inputs using standard validator
@@ -379,14 +405,14 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
 
         // Configure LOWESS for this chunk
         // Combine with overlap from previous chunk
-        let prev_overlap_len = self.overlap_buffer_smoothed.len();
-        let (combined_x, combined_y) = if self.overlap_buffer_x.is_empty() {
+        let prev_overlap_len: usize = self.buffer.overlap_smoothed.len();
+        let (combined_x, combined_y) = if self.buffer.overlap_x.is_empty() {
             // No overlap: move sorted data directly (no clone needed)
             (sorted.x, sorted.y)
         } else {
-            let mut cx = core::mem::take(&mut self.overlap_buffer_x);
+            let mut cx: Vec<T> = take(&mut *self.buffer.overlap_x);
             cx.extend_from_slice(&sorted.x);
-            let mut cy = core::mem::take(&mut self.overlap_buffer_y);
+            let mut cy: Vec<T> = take(&mut *self.buffer.overlap_y);
             cy.extend_from_slice(&sorted.y);
             (cx, cy)
         };
@@ -401,6 +427,7 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
             zero_weight_fallback: zero_flag,
             robustness_method: self.config.robustness_method,
             boundary_policy: self.config.boundary_policy,
+            scaling_method: self.config.scaling_method,
             cv_fractions: None,
             cv_kind: None,
             auto_convergence: self.config.auto_convergence,
@@ -417,19 +444,27 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
             backend: self.config.backend,
         };
         // Execute LOWESS on combined data
-        let result = LowessExecutor::run_with_config(&combined_x, &combined_y, config);
+        // Use pre-allocated work_buffer to minimize allocations
+        let result = LowessExecutor::from_config(&config).run(
+            &combined_x,
+            &combined_y,
+            Some(&mut self.buffer.work_buffer),
+        );
         let smoothed = result.smoothed;
-
+        let robustness_weights = result.robustness_weights;
+        let iterations = result.iterations.unwrap_or(0);
         // Determine how much to return vs buffer
         let combined_len = combined_x.len();
         let overlap_start = combined_len.saturating_sub(self.config.overlap);
         let return_start = prev_overlap_len;
 
         // Build output: merged overlap (if any) + new data
-        let mut y_smooth_out = Vec::new();
+        let mut y_smooth_out: Vec<T> = Vec::new();
         if prev_overlap_len > 0 {
             // Merge the overlap region
-            let prev_smooth = core::mem::take(&mut self.overlap_buffer_smoothed);
+            // Use as_vec() and index instead of take() to preserve buffered data if possible,
+            // but we need to merge into a results vector anyway.
+            let prev_smooth = self.buffer.overlap_smoothed.as_vec();
             for (i, (&prev_val, &curr_val)) in prev_smooth
                 .iter()
                 .zip(smoothed.iter())
@@ -450,7 +485,7 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
         }
 
         // Merge robustness weights if requested
-        let mut rob_weights_out = if self.config.return_robustness_weights {
+        let mut rob_weights_out: Option<Vec<T>> = if self.config.return_robustness_weights {
             Some(Vec::new())
         } else {
             None
@@ -458,10 +493,10 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
 
         if let Some(ref mut rw_out) = rob_weights_out {
             if prev_overlap_len > 0 {
-                let prev_rw = core::mem::take(&mut self.overlap_buffer_robustness_weights);
+                let prev_rw = self.buffer.overlap_robustness_weights.as_vec();
                 for (i, (&prev_val, &curr_val)) in prev_rw
                     .iter()
-                    .zip(result.robustness_weights.iter())
+                    .zip(robustness_weights.iter())
                     .take(prev_overlap_len)
                     .enumerate()
                 {
@@ -483,10 +518,9 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
         if return_start < overlap_start {
             y_smooth_out.extend_from_slice(&smoothed[return_start..overlap_start]);
             if let Some(ref mut rw_out) = rob_weights_out {
-                rw_out.extend_from_slice(&result.robustness_weights[return_start..overlap_start]);
+                rw_out.extend_from_slice(&robustness_weights[return_start..overlap_start]);
             }
         }
-
         // Calculate residuals for output
         let residuals_out = if self.config.compute_residuals {
             let y_slice = &combined_y[return_start..return_start + y_smooth_out.len()];
@@ -503,18 +537,29 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
 
         // Buffer overlap for next chunk
         if overlap_start < combined_len {
-            self.overlap_buffer_x = combined_x[overlap_start..].to_vec();
-            self.overlap_buffer_y = combined_y[overlap_start..].to_vec();
-            self.overlap_buffer_smoothed = smoothed[overlap_start..].to_vec();
+            VecExt::assign_slice(
+                self.buffer.overlap_x.as_vec_mut(),
+                &combined_x[overlap_start..],
+            );
+            VecExt::assign_slice(
+                self.buffer.overlap_y.as_vec_mut(),
+                &combined_y[overlap_start..],
+            );
+            VecExt::assign_slice(
+                self.buffer.overlap_smoothed.as_vec_mut(),
+                &smoothed[overlap_start..],
+            );
             if self.config.return_robustness_weights {
-                self.overlap_buffer_robustness_weights =
-                    result.robustness_weights[overlap_start..].to_vec();
+                VecExt::assign_slice(
+                    self.buffer.overlap_robustness_weights.as_vec_mut(),
+                    &robustness_weights[overlap_start..],
+                );
             }
         } else {
-            self.overlap_buffer_x.clear();
-            self.overlap_buffer_y.clear();
-            self.overlap_buffer_smoothed.clear();
-            self.overlap_buffer_robustness_weights.clear();
+            self.buffer.overlap_x.clear();
+            self.buffer.overlap_y.clear();
+            self.buffer.overlap_smoothed.clear();
+            self.buffer.overlap_robustness_weights.clear();
         }
 
         // Note: We return results in sorted order (by x) for streaming chunks.
@@ -542,7 +587,7 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
             residuals: residuals_out,
             robustness_weights: rob_weights_out,
             diagnostics,
-            iterations_used: result.iterations,
+            iterations_used: Some(iterations),
             fraction_used: self.config.fraction,
             cv_scores: None,
         })
@@ -550,7 +595,7 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
 
     /// Finalize processing and get any remaining buffered data.
     pub fn finalize(&mut self) -> Result<LowessResult<T>, LowessError> {
-        if self.overlap_buffer_x.is_empty() {
+        if self.buffer.overlap_x.is_empty() {
             return Ok(LowessResult {
                 x: Vec::new(),
                 y: Vec::new(),
@@ -570,9 +615,9 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
 
         // Return buffered overlap data
         let residuals = if self.config.compute_residuals {
-            let mut res = Vec::with_capacity(self.overlap_buffer_x.len());
-            for (i, &smoothed) in self.overlap_buffer_smoothed.iter().enumerate() {
-                res.push(self.overlap_buffer_y[i] - smoothed);
+            let mut res = Vec::with_capacity(self.buffer.overlap_x.len());
+            for (i, &smoothed) in self.buffer.overlap_smoothed.iter().enumerate() {
+                res.push(self.buffer.overlap_y[i] - smoothed);
             }
             Some(res)
         } else {
@@ -580,22 +625,22 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
         };
 
         let robustness_weights = if self.config.return_robustness_weights {
-            Some(core::mem::take(&mut self.overlap_buffer_robustness_weights))
+            Some(take(&mut *self.buffer.overlap_robustness_weights))
         } else {
             None
         };
 
         // Update diagnostics for the final overlap
         let diagnostics = if let Some(ref mut state) = self.diagnostics_state {
-            state.update(&self.overlap_buffer_y, &self.overlap_buffer_smoothed);
+            state.update(&self.buffer.overlap_y, &self.buffer.overlap_smoothed);
             Some(state.finalize())
         } else {
             None
         };
 
         let result = LowessResult {
-            x: self.overlap_buffer_x.clone(),
-            y: self.overlap_buffer_smoothed.clone(),
+            x: self.buffer.overlap_x.as_vec().clone(),
+            y: self.buffer.overlap_smoothed.as_vec().clone(),
             standard_errors: None,
             confidence_lower: None,
             confidence_upper: None,
@@ -610,19 +655,13 @@ impl<T: Float + Debug + Send + Sync + 'static> StreamingLowess<T> {
         };
 
         // Clear buffers
-        self.overlap_buffer_x.clear();
-        self.overlap_buffer_y.clear();
-        self.overlap_buffer_smoothed.clear();
-        self.overlap_buffer_robustness_weights.clear();
+        self.buffer.clear();
 
         Ok(result)
     }
 
     /// Reset the processor state.
     pub fn reset(&mut self) {
-        self.overlap_buffer_x.clear();
-        self.overlap_buffer_y.clear();
-        self.overlap_buffer_smoothed.clear();
-        self.overlap_buffer_robustness_weights.clear();
+        self.buffer.clear();
     }
 }

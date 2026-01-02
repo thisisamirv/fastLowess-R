@@ -343,8 +343,10 @@ impl WeightFunction {
 
         // Degenerate bandwidth: zero all weights in window
         if bandwidth <= T::zero() {
-            for w in weights.iter_mut().take(n).skip(left) {
-                *w = T::zero();
+            let mut i = left;
+            while i < n {
+                weights[i] = T::zero();
+                i += 1;
             }
             return (T::zero(), left);
         }
@@ -361,22 +363,32 @@ impl WeightFunction {
 
         // Zero the skipped region [left..start)
         if start > left {
-            weights[left..start].fill(T::zero());
+            let mut i = left;
+            while i < start {
+                weights[i] = T::zero();
+                i += 1;
+            }
         }
 
-        // Compute weights from start onwards
-        for j in start..=right {
+        // Compute weights from start onwards using while loop for performance
+        let mut j = start;
+        while j <= right {
             let xj = x[j];
             let distance = (xj - x_current).abs();
 
             if distance > h9 {
                 if xj > x_current {
                     // Beyond h9 on right side (x is sorted): zero remaining in window and break
-                    weights[j..=right].fill(T::zero());
+                    let mut k = j;
+                    while k <= right {
+                        weights[k] = T::zero();
+                        k += 1;
+                    }
                     break;
                 }
                 // Beyond h9 on left side (defensive)
                 weights[j] = T::zero();
+                j += 1;
                 continue;
             }
 
@@ -390,6 +402,7 @@ impl WeightFunction {
             weights[j] = w_k;
             sum = sum + w_k;
             rightmost = j;
+            j += 1;
         }
 
         (sum, rightmost)

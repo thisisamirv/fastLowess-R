@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/lowess.svg)](https://crates.io/crates/lowess)
 [![Documentation](https://docs.rs/lowess/badge.svg)](https://docs.rs/lowess)
-[![License](https://img.shields.io/badge/License-AGPL--3.0%20OR%20Commercial-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
 A high-performance implementation of LOWESS (Locally Weighted Scatterplot Smoothing) in Rust. This crate provides a robust, production-ready implementation with support for confidence intervals, multiple kernel functions, and optimized execution modes.
@@ -17,11 +17,11 @@ A high-performance implementation of LOWESS (Locally Weighted Scatterplot Smooth
 - **Optimized Performance**: Delta optimization for skipping dense regions and streaming/online modes for large or real-time datasets.
 - **Parameter Selection**: Built-in cross-validation for automatic smoothing fraction selection.
 - **Flexibility**: Multiple weight kernels (Tricube, Epanechnikov, etc.) and `no_std` support (requires `alloc`).
-- **Validated**: Numerical agreement with R's `stats::lowess` and Python's `statsmodels`.
+- **Validated**: Numerical agreement with R's `stats::lowess`.
 
 ## Robustness Advantages
 
-This implementation is **more robust than statsmodels** due to two key design choices:
+This implementation is **more robust than R's `lowess`** due to two key design choices:
 
 ### MAD-Based Scale Estimation
 
@@ -31,7 +31,7 @@ For robustness weight calculations, this crate uses **Median Absolute Deviation 
 s = median(|r_i - median(r)|)
 ```
 
-In contrast, statsmodels uses median of absolute residuals:
+In contrast, R's `lowess` uses median of absolute residuals:
 
 ```text
 s = median(|r_i|)
@@ -50,8 +50,9 @@ This crate applies **boundary policies** (Extend, Reflect, Zero) at dataset edge
 - **Extend**: Repeats edge values to maintain local neighborhood size.
 - **Reflect**: Mirrors data symmetrically around boundaries.
 - **Zero**: Pads with zeros (useful for signal processing).
+- **NoBoundary**: Original Cleveland behavior
 
-statsmodels does not apply boundary padding, which can lead to:
+R's `lowess` does not apply boundary padding, which can lead to:
 
 - Biased estimates near boundaries due to asymmetric local neighborhoods.
 - Increased variance at the edges of the smoothed curve.
@@ -68,37 +69,49 @@ The factor 1.4826 = 1/Phi^-1(3/4) ensures consistency with the standard deviatio
 
 ## Performance Advantages
 
-Benchmarked against Python's `statsmodels`. Achieves **113-2813× faster performance** across all tested scenarios, with no regressions. Performance gains scale dramatically with dataset size.
+The Rust `lowess` crate demonstrates consistent performance improvements over R's `stats::lowess` across all tested scenarios. Median speedups range from **1.3x to 3.4x** across different categories, with peak speedups reaching **4.7x** in specific configurations. No regressions were observed; Rust was faster in all matched benchmarks.
 
-### Summary
+### Category Comparison
 
 | Category         | Matched | Median Speedup | Mean Speedup |
 |------------------|---------|----------------|--------------|
-| **Scalability**  | 5       | **481×**       | 1057×        |
-| **Financial**    | 4       | **270×**       | 301×         |
-| **Iterations**   | 6       | **238×**       | 248×         |
-| **Pathological** | 4       | **234×**       | 220×         |
-| **Scientific**   | 4       | **212×**       | 239×         |
-| **Fraction**     | 6       | **218×**       | 268×         |
-| **Genomic**      | 4       | **6.9×**       | 10.4×        |
-| **Delta**        | 4       | **5.0×**       | 5.0×         |
+| **Delta**        | 4       | **3.37x**      | 3.25x        |
+| **Financial**    | 3       | **2.16x**      | 2.22x        |
+| **Pathological** | 4       | **2.01x**      | 1.87x        |
+| **Scalability**  | 3       | **1.97x**      | 1.94x        |
+| **Iterations**   | 6       | **1.94x**      | 2.02x        |
+| **Fraction**     | 6       | **1.85x**      | 1.93x        |
+| **Scientific**   | 3       | **1.84x**      | 1.80x        |
+| **Genomic**      | 2       | **1.31x**      | 1.31x        |
 
 ### Top 10 Performance Wins
 
-| Benchmark        | statsmodels | Rust   | Speedup   |
-|------------------|-------------|--------|-----------|
-| scale_100000     | 43.7s       | 15.5ms | **2813×** |
-| scale_50000      | 11.2s       | 7.6ms  | **1466×** |
-| fraction_0.05    | 197.2ms     | 0.38ms | **516×**  |
-| financial_10000  | 497.1ms     | 0.97ms | **512×**  |
-| scale_10000      | 663.1ms     | 1.38ms | **481×**  |
-| scientific_10000 | 777.2ms     | 1.86ms | **418×**  |
-| financial_5000   | 170.9ms     | 0.49ms | **346×**  |
-| fraction_0.1     | 227.9ms     | 0.67ms | **339×**  |
-| scale_5000       | 229.9ms     | 0.69ms | **334×**  |
-| iterations_0     | 74.2ms      | 0.26ms | **289×**  |
+| Benchmark       | Rust   | R      | Speedup   |
+|-----------------|--------|--------|-----------|
+| delta_medium    | 0.18ms | 0.85ms | **4.72x** |
+| delta_large     | 0.14ms | 0.54ms | **3.97x** |
+| delta_small     | 0.34ms | 0.95ms | **2.76x** |
+| iterations_0    | 0.17ms | 0.43ms | **2.54x** |
+| financial_5000  | 0.36ms | 0.89ms | **2.46x** |
+| clustered       | 0.82ms | 1.97ms | **2.39x** |
+| fraction_0.05   | 0.31ms | 0.72ms | **2.36x** |
+| iterations_2    | 0.64ms | 1.43ms | **2.23x** |
+| scale_10000     | 0.96ms | 2.08ms | **2.17x** |
+| constant_y      | 0.65ms | 1.40ms | **2.17x** |
 
-Check [Benchmarks](https://github.com/thisisamirv/lowess/tree/bench/benchmarks) for detailed results and reproducible benchmarking code.
+**Regressions: None identified.** Rust outperforms R in all matched benchmarks. Check [Benchmarks](https://github.com/thisisamirv/lowess/tree/bench/benchmarks) for detailed results and reproducible benchmarking code.
+
+## Validation
+
+The Rust `lowess` crate is a **numerical twin** of R's `lowess` implementation:
+
+| Aspect          | Status         | Details                                    |
+|-----------------|----------------|--------------------------------------------|
+| **Accuracy**    | ✅ EXACT MATCH | Max diff < 1e-12 across all scenarios      |
+| **Consistency** | ✅ PERFECT     | 15/15 scenarios pass with strict tolerance |
+| **Robustness**  | ✅ VERIFIED    | Robust smoothing matches R exactly         |
+
+Check [Validation](https://github.com/thisisamirv/lowess/tree/bench/validation) for detailed scenario results.
 
 ## Installation
 
@@ -106,14 +119,14 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-lowess = "0.6"
+lowess = "0.7"
 ```
 
 For `no_std` environments:
 
 ```toml
 [dependencies]
-lowess = { version = "0.6", default-features = false }
+lowess = { version = "0.7", default-features = false }
 ```
 
 ## Quick Start
@@ -321,15 +334,6 @@ cargo run --example streaming_smoothing
 
 Rust **1.85.0** or later (2024 Edition).
 
-## Validation
-
-Validated against:
-
-- **Python (statsmodels)**: Passed on 44 distinct test scenarios.
-- **Original Paper**: Reproduces Cleveland (1979) results.
-
-Check [Validation](https://github.com/thisisamirv/lowess/tree/bench/validation) for more information. Small variations in results are expected due to differences in scale estimation and padding.
-
 ## Related Work
 
 - [fastLowess (Rust)](https://github.com/thisisamirv/fastlowess)
@@ -342,8 +346,14 @@ Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) fil
 
 ## License
 
-Dual-licensed under **AGPL-3.0** (Open Source) or **Commercial License**.
-Contact `<thisisamirv@gmail.com>` for commercial inquiries.
+Licensed under either of
+
+- Apache License, Version 2.0
+   ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license
+   ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+
+at your option.
 
 ## References
 

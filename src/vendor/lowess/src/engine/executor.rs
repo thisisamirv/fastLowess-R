@@ -50,16 +50,15 @@ use num_traits::Float;
 
 // Internal dependencies
 use crate::algorithms::interpolation::interpolate_gap;
-use crate::algorithms::regression::{
-    GLSModel, LinearRegression, Regression, RegressionContext, ZeroWeightFallback,
-};
+use crate::algorithms::regression::{LinearFit, RegressionContext, WLSSolver, ZeroWeightFallback};
 use crate::algorithms::robustness::RobustnessMethod;
 use crate::evaluation::cv::CVKind;
 use crate::evaluation::intervals::IntervalMethod;
-use crate::math::boundary::apply_boundary_policy;
+use crate::math::boundary::{BoundaryPolicy, apply_boundary_policy};
 use crate::math::kernel::WeightFunction;
+use crate::math::scaling::ScalingMethod;
 use crate::primitives::backend::Backend;
-use crate::primitives::partition::BoundaryPolicy;
+pub use crate::primitives::buffer::LowessBuffer;
 use crate::primitives::window::Window;
 
 // ============================================================================
@@ -114,42 +113,6 @@ pub type FitPassFn<T> = fn(
     usize,          // iterations
     Vec<T>,         // robustness_weights
 );
-
-/// Working buffers for LOWESS iteration.
-#[doc(hidden)]
-pub struct IterationBuffers<T> {
-    /// Current smoothed values
-    pub y_smooth: Vec<T>,
-
-    /// Previous iteration values (for convergence check)
-    pub y_prev: Vec<T>,
-
-    /// Robustness weights
-    pub robustness_weights: Vec<T>,
-
-    /// Residuals buffer
-    pub residuals: Vec<T>,
-
-    /// Kernel weights scratch buffer
-    pub weights: Vec<T>,
-}
-
-impl<T: Float> IterationBuffers<T> {
-    /// Allocate all working buffers for LOWESS iteration.
-    pub fn allocate(n: usize, use_convergence: bool) -> Self {
-        Self {
-            y_smooth: vec![T::zero(); n],
-            y_prev: if use_convergence {
-                vec![T::zero(); n]
-            } else {
-                Vec::new()
-            },
-            robustness_weights: vec![T::one(); n],
-            residuals: vec![T::zero(); n],
-            weights: vec![T::zero(); n],
-        }
-    }
-}
 
 /// Output from LOWESS execution.
 #[derive(Debug, Clone)]
@@ -217,6 +180,9 @@ pub struct LowessConfig<T> {
     /// Boundary handling policy.
     pub boundary_policy: BoundaryPolicy,
 
+    /// Scaling method for robust scale estimation.
+    pub scaling_method: ScalingMethod,
+
     // ++++++++++++++++++++++++++++++++++++++
     // +               DEV                  +
     // ++++++++++++++++++++++++++++++++++++++
@@ -260,6 +226,7 @@ impl<T: Float> Default for LowessConfig<T> {
             auto_convergence: None,
             return_variance: None,
             boundary_policy: BoundaryPolicy::default(),
+            scaling_method: ScalingMethod::default(),
             custom_smooth_pass: None,
             custom_cv_pass: None,
             custom_interval_pass: None,
@@ -293,6 +260,15 @@ pub struct LowessExecutor<T: Float> {
 
     /// Boundary handling policy.
     pub boundary_policy: BoundaryPolicy,
+
+    /// Scaling method for robust scale estimation.
+    pub scaling_method: ScalingMethod,
+
+    /// Auto-convergence tolerance.
+    pub auto_convergence: Option<T>,
+
+    /// Interval estimation method.
+    pub interval_method: Option<IntervalMethod<T>>,
 
     // ++++++++++++++++++++++++++++++++++++++
     // +               DEV                  +
@@ -343,6 +319,9 @@ impl<T: Float> LowessExecutor<T> {
             zero_weight_fallback: 0,
             robustness_method: RobustnessMethod::Bisquare,
             boundary_policy: BoundaryPolicy::default(),
+            scaling_method: ScalingMethod::default(),
+            auto_convergence: None,
+            interval_method: None,
             custom_smooth_pass: None,
             custom_cv_pass: None,
             custom_interval_pass: None,
@@ -363,6 +342,9 @@ impl<T: Float> LowessExecutor<T> {
             .zero_weight_fallback(config.zero_weight_fallback)
             .robustness_method(config.robustness_method)
             .boundary_policy(config.boundary_policy)
+            .scaling_method(config.scaling_method)
+            .auto_convergence(config.auto_convergence)
+            .interval_method(config.return_variance)
             // ++++++++++++++++++++++++++++++++++++++
             // +               DEV                  +
             // ++++++++++++++++++++++++++++++++++++++
@@ -395,6 +377,7 @@ impl<T: Float> LowessExecutor<T> {
             auto_convergence: tolerance,
             return_variance: interval_method.cloned(),
             boundary_policy: self.boundary_policy,
+            scaling_method: self.scaling_method,
             // ++++++++++++++++++++++++++++++++++++++
             // +               DEV                  +
             // ++++++++++++++++++++++++++++++++++++++
@@ -449,6 +432,23 @@ impl<T: Float> LowessExecutor<T> {
         self
     }
 
+    /// Set the scaling method for robust scale estimation.
+    pub fn scaling_method(mut self, method: ScalingMethod) -> Self {
+        self.scaling_method = method;
+        self
+    }
+
+    /// Set the auto-convergence tolerance.
+    pub fn auto_convergence(mut self, tolerance: Option<T>) -> Self {
+        self.auto_convergence = tolerance;
+        self
+    }
+
+    /// Set the interval estimation method.
+    pub fn interval_method(mut self, method: Option<IntervalMethod<T>>) -> Self {
+        self.interval_method = method;
+        self
+    }
     // ++++++++++++++++++++++++++++++++++++++
     // +               DEV                  +
     // ++++++++++++++++++++++++++++++++++++++
@@ -502,7 +502,7 @@ impl<T: Float> LowessExecutor<T> {
     /// Smooth data using a `LowessConfig` payload.
     pub fn run_with_config(x: &[T], y: &[T], config: LowessConfig<T>) -> ExecutorOutput<T>
     where
-        T: Float + Debug + Send + Sync + 'static,
+        T: Float + WLSSolver + Debug + Send + Sync + 'static,
     {
         let executor = LowessExecutor::from_config(&config);
 
@@ -514,33 +514,64 @@ impl<T: Float> LowessExecutor<T> {
             let (best_frac, scores) = if let Some(callback) = config.custom_cv_pass {
                 callback(x, y, cv_fracs, cv_kind, &config)
             } else {
-                cv_kind.run(x, y, cv_fracs, config.cv_seed, |tx, ty, f| {
-                    executor.run(tx, ty, Some(f), None, None, None).smoothed
-                })
+                use crate::primitives::buffer::CVBuffer;
+                let mut cv_buffer = CVBuffer::new();
+                cv_kind.run(
+                    x,
+                    y,
+                    1, // dimensions for LOWESS
+                    cv_fracs,
+                    config.cv_seed,
+                    |tx, ty, f| {
+                        executor
+                            .clone() // Clone executor to set fraction for CV
+                            .fraction(f)
+                            .iterations(config.iterations)
+                            .delta(config.delta)
+                            .weight_function(config.weight_function)
+                            .zero_weight_fallback(config.zero_weight_fallback)
+                            .robustness_method(config.robustness_method)
+                            .boundary_policy(config.boundary_policy)
+                            .scaling_method(config.scaling_method)
+                            .custom_smooth_pass(config.custom_smooth_pass)
+                            .custom_cv_pass(config.custom_cv_pass)
+                            .custom_interval_pass(config.custom_interval_pass)
+                            .custom_fit_pass(config.custom_fit_pass)
+                            .parallel(config.parallel)
+                            .backend(config.backend)
+                            .run(tx, ty, None)
+                            .smoothed
+                    },
+                    None::<fn(&[T], &[T], &[T], T) -> Vec<T>>,
+                    &mut cv_buffer,
+                )
             };
 
             // Run final pass with best fraction
-            let mut output = executor.run(
-                x,
-                y,
-                Some(best_frac),
-                Some(config.iterations),
-                config.auto_convergence,
-                config.return_variance.as_ref(),
-            );
+            let mut output = executor
+                .fraction(best_frac)
+                .iterations(config.iterations)
+                .delta(config.delta)
+                .weight_function(config.weight_function)
+                .zero_weight_fallback(config.zero_weight_fallback)
+                .robustness_method(config.robustness_method)
+                .boundary_policy(config.boundary_policy)
+                .scaling_method(config.scaling_method)
+                .auto_convergence(config.auto_convergence)
+                .interval_method(config.return_variance)
+                .custom_smooth_pass(config.custom_smooth_pass)
+                .custom_cv_pass(config.custom_cv_pass)
+                .custom_interval_pass(config.custom_interval_pass)
+                .custom_fit_pass(config.custom_fit_pass)
+                .parallel(config.parallel)
+                .backend(config.backend)
+                .run(x, y, None);
             output.cv_scores = Some(scores);
             output.used_fraction = best_frac;
             output
         } else {
             // Direct run (no CV)
-            executor.run(
-                x,
-                y,
-                config.fraction,
-                Some(config.iterations),
-                config.auto_convergence,
-                config.return_variance.as_ref(),
-            )
+            executor.run(x, y, None)
         }
     }
 
@@ -550,24 +581,20 @@ impl<T: Float> LowessExecutor<T> {
     ///
     /// * **Insufficient data** (n < 2): Returns original y-values.
     /// * **Global regression** (fraction >= 1.0): Performs OLS on the entire dataset.
-    fn run(
-        &self,
-        x: &[T],
-        y: &[T],
-        fraction: Option<T>,
-        max_iter: Option<usize>,
-        tolerance: Option<T>,
-        confidence_method: Option<&IntervalMethod<T>>,
-    ) -> ExecutorOutput<T>
+    pub fn run(&self, x: &[T], y: &[T], buffer: Option<&mut LowessBuffer<T>>) -> ExecutorOutput<T>
     where
-        T: Float + Debug + Send + Sync + 'static,
+        T: Float + WLSSolver + Debug + Send + Sync + 'static,
     {
         let n = x.len();
-        let eff_fraction = fraction.unwrap_or(self.fraction);
+        let eff_fraction = self.fraction;
+        let target_iterations = self.iterations;
+        let tolerance = self.auto_convergence;
+        let confidence_method = self.interval_method.as_ref();
 
         // Handle global regression (fraction >= 1.0)
         if eff_fraction >= T::one() {
-            let smoothed = GLSModel::global_ols(x, y);
+            let model = LinearFit::fit_ols(x, y);
+            let smoothed = x.iter().map(|&xi| model.predict(xi)).collect();
             return ExecutorOutput {
                 smoothed,
                 std_errors: if confidence_method.is_some() {
@@ -582,10 +609,8 @@ impl<T: Float> LowessExecutor<T> {
             };
         }
 
-        // Calculate window size and prepare fitter
+        // Calculate window size
         let window_size = Window::calculate_span(n, eff_fraction);
-        let fitter = LinearRegression;
-        let target_iterations = max_iter.unwrap_or(self.iterations);
 
         // Handle boundary padding
         let (x_in, y_in, pad_len) = if self.boundary_policy != BoundaryPolicy::Extend {
@@ -610,12 +635,12 @@ impl<T: Float> LowessExecutor<T> {
                 self.delta,
                 self.weight_function,
                 self.zero_weight_fallback,
-                &fitter,
                 &self.robustness_method,
                 confidence_method,
                 tolerance,
                 self.custom_smooth_pass,
                 self.custom_interval_pass,
+                buffer,
             );
 
         // Slice back to original range if padded
@@ -645,7 +670,7 @@ impl<T: Float> LowessExecutor<T> {
 
     /// Perform the full LOWESS iteration loop.
     #[allow(clippy::too_many_arguments)]
-    pub fn iteration_loop_with_callback<Fitter>(
+    pub fn iteration_loop_with_callback(
         &self,
         x: &[T],
         y: &[T],
@@ -655,16 +680,15 @@ impl<T: Float> LowessExecutor<T> {
         delta: T,
         weight_function: WeightFunction,
         zero_weight_flag: u8,
-        fitter: &Fitter,
         robustness_updater: &RobustnessMethod,
         interval_method: Option<&IntervalMethod<T>>,
         convergence_tolerance: Option<T>,
         smooth_pass_fn: Option<SmoothPassFn<T>>,
         interval_pass_fn: Option<IntervalPassFn<T>>,
+        buffer: Option<&mut LowessBuffer<T>>,
     ) -> (Vec<T>, Option<Vec<T>>, usize, Vec<T>)
     where
-        Fitter: Regression<T> + ?Sized,
-        T: Float + Debug + Send + Sync + 'static,
+        T: Float + WLSSolver + Debug + Send + Sync + 'static,
     {
         if self.custom_fit_pass.is_some() {
             let config = self.to_config(Some(eff_fraction), convergence_tolerance, interval_method);
@@ -672,7 +696,15 @@ impl<T: Float> LowessExecutor<T> {
         }
 
         let n = x.len();
-        let mut buffers = IterationBuffers::allocate(n, convergence_tolerance.is_some());
+        let mut internal_buffers;
+        let buffers = if let Some(b) = buffer {
+            b.prepare(n, convergence_tolerance.is_some());
+            b
+        } else {
+            internal_buffers = LowessBuffer::with_capacity(n);
+            internal_buffers.prepare(n, convergence_tolerance.is_some());
+            &mut internal_buffers
+        };
         let mut iterations_performed = 0;
 
         // Copy initial y values to y_smooth
@@ -712,7 +744,6 @@ impl<T: Float> LowessExecutor<T> {
                     weight_function,
                     &mut buffers.weights,
                     zero_weight_flag,
-                    fitter,
                 );
             }
 
@@ -731,6 +762,7 @@ impl<T: Float> LowessExecutor<T> {
                     &mut buffers.residuals,
                     &mut buffers.robustness_weights,
                     robustness_updater,
+                    self.scaling_method,
                     &mut buffers.weights,
                 );
             }
@@ -751,10 +783,10 @@ impl<T: Float> LowessExecutor<T> {
         });
 
         (
-            buffers.y_smooth,
+            buffers.y_smooth.as_vec().clone(),
             std_errors,
             iterations_performed,
-            buffers.robustness_weights,
+            buffers.robustness_weights.as_vec().clone(),
         )
     }
 
@@ -764,7 +796,7 @@ impl<T: Float> LowessExecutor<T> {
 
     /// Perform a single smoothing pass over all points.
     #[allow(clippy::too_many_arguments)]
-    pub fn smooth_pass<Fitter>(
+    pub fn smooth_pass(
         x: &[T],
         y: &[T],
         window_size: usize,
@@ -775,9 +807,8 @@ impl<T: Float> LowessExecutor<T> {
         weight_function: WeightFunction,
         weights: &mut [T],
         zero_weight_flag: u8,
-        fitter: &Fitter,
     ) where
-        Fitter: Regression<T> + ?Sized,
+        T: WLSSolver,
     {
         let zero_weight_fallback = ZeroWeightFallback::from_u8(zero_weight_flag);
 
@@ -791,7 +822,6 @@ impl<T: Float> LowessExecutor<T> {
             weights,
             weight_function,
             zero_weight_fallback,
-            fitter,
             y_smooth,
         );
 
@@ -805,7 +835,6 @@ impl<T: Float> LowessExecutor<T> {
             weights,
             weight_function,
             zero_weight_fallback,
-            fitter,
             y_smooth,
             window,
         );
@@ -836,17 +865,20 @@ impl<T: Float> LowessExecutor<T> {
         }
 
         let n = x.len();
-        let mut se = vec![T::zero(); n];
+        let mut std_errors = vec![T::zero(); n];
+
+        // Use the interval method's logic to compute SE
         interval_method.compute_window_se(
             x,
             y,
             y_smooth,
             window_size,
             robustness_weights,
-            &mut se,
-            &|t| weight_function.compute_weight(t),
+            &mut std_errors,
+            &|u| weight_function.compute_weight(u),
         );
-        se
+
+        std_errors
     }
 
     // ========================================================================
@@ -872,13 +904,19 @@ impl<T: Float> LowessExecutor<T> {
         residuals: &mut [T],
         robustness_weights: &mut [T],
         robustness_updater: &RobustnessMethod,
+        scaling_method: ScalingMethod,
         scratch: &mut [T],
     ) {
         // Inline compute_residuals: residuals[i] = y[i] - y_smooth[i]
         for i in 0..y.len() {
             residuals[i] = y[i] - y_smooth[i];
         }
-        robustness_updater.apply_robustness_weights(residuals, robustness_weights, scratch);
+        robustness_updater.apply_robustness_weights(
+            residuals,
+            robustness_weights,
+            scaling_method,
+            scratch,
+        );
     }
 
     /// Helper to slice result buffers back to original data length when padding was used.
@@ -907,7 +945,7 @@ impl<T: Float> LowessExecutor<T> {
 
     /// Fit the first point and initialize the smoothing window.
     #[allow(clippy::too_many_arguments)]
-    pub fn fit_single_point<Fitter>(
+    pub fn fit_single_point(
         x: &[T],
         y: &[T],
         idx: usize,
@@ -917,16 +955,15 @@ impl<T: Float> LowessExecutor<T> {
         weights: &mut [T],
         weight_function: WeightFunction,
         zero_weight_fallback: ZeroWeightFallback,
-        fitter: &Fitter,
     ) -> (T, Window)
     where
-        Fitter: Regression<T> + ?Sized,
+        T: WLSSolver,
     {
         let n = x.len();
         let mut window = Window::initialize(idx, window_size, n);
         window.recenter(x, idx, n);
 
-        let ctx = RegressionContext {
+        let mut ctx = RegressionContext {
             x,
             y,
             idx,
@@ -938,12 +975,12 @@ impl<T: Float> LowessExecutor<T> {
             zero_weight_fallback,
         };
 
-        (fitter.fit(ctx).unwrap_or_else(|| y[idx]), window)
+        (ctx.fit().unwrap_or_else(|| y[idx]), window)
     }
 
     /// Fit the first point and initialize the smoothing window.
     #[allow(clippy::too_many_arguments)]
-    pub fn fit_first_point<Fitter>(
+    pub fn fit_first_point(
         x: &[T],
         y: &[T],
         window_size: usize,
@@ -952,11 +989,10 @@ impl<T: Float> LowessExecutor<T> {
         weights: &mut [T],
         weight_function: WeightFunction,
         zero_weight_fallback: ZeroWeightFallback,
-        fitter: &Fitter,
         y_smooth: &mut [T],
     ) -> Window
     where
-        Fitter: Regression<T> + ?Sized,
+        T: WLSSolver,
     {
         let (val, window) = Self::fit_single_point(
             x,
@@ -968,7 +1004,6 @@ impl<T: Float> LowessExecutor<T> {
             weights,
             weight_function,
             zero_weight_fallback,
-            fitter,
         );
         y_smooth[0] = val;
         window
@@ -980,7 +1015,7 @@ impl<T: Float> LowessExecutor<T> {
     /// the next anchor point. This reduces the overhead from O(n) to O(log n)
     /// per anchor, providing significant speedup when delta is large.
     #[allow(clippy::too_many_arguments)]
-    fn fit_and_interpolate_remaining<Fitter>(
+    fn fit_and_interpolate_remaining(
         x: &[T],
         y: &[T],
         delta: T,
@@ -989,11 +1024,10 @@ impl<T: Float> LowessExecutor<T> {
         weights: &mut [T],
         weight_function: WeightFunction,
         zero_weight_fallback: ZeroWeightFallback,
-        fitter: &Fitter,
         y_smooth: &mut [T],
         mut window: Window,
     ) where
-        Fitter: Regression<T> + ?Sized,
+        T: WLSSolver,
     {
         let n = x.len();
         let mut last_fitted = 0usize;
@@ -1036,7 +1070,7 @@ impl<T: Float> LowessExecutor<T> {
             window.recenter(x, current, n);
 
             // Fit current point
-            let ctx = RegressionContext {
+            let mut ctx = RegressionContext {
                 x,
                 y,
                 idx: current,
@@ -1048,7 +1082,7 @@ impl<T: Float> LowessExecutor<T> {
                 zero_weight_fallback,
             };
 
-            y_smooth[current] = fitter.fit(ctx).unwrap_or_else(|| y[current]);
+            y_smooth[current] = ctx.fit().unwrap_or_else(|| y[current]);
 
             // Linearly interpolate between last fitted and current
             interpolate_gap(x, y_smooth, last_fitted, current);
@@ -1061,7 +1095,7 @@ impl<T: Float> LowessExecutor<T> {
             let final_idx = n - 1;
             window.recenter(x, final_idx, n);
 
-            let ctx = RegressionContext {
+            let mut ctx = RegressionContext {
                 x,
                 y,
                 idx: final_idx,
@@ -1073,7 +1107,7 @@ impl<T: Float> LowessExecutor<T> {
                 zero_weight_fallback,
             };
 
-            y_smooth[final_idx] = fitter.fit(ctx).unwrap_or_else(|| y[final_idx]);
+            y_smooth[final_idx] = ctx.fit().unwrap_or_else(|| y[final_idx]);
             interpolate_gap(x, y_smooth, last_fitted, final_idx);
         }
     }

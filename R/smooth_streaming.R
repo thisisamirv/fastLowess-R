@@ -36,8 +36,10 @@
 #'   "triangle", "cosine".
 #' @param robustness_method Method for computing robustness weights. Options:
 #'   "bisquare" (default), "huber", "talwar".
+#' @param scaling_method Scaling method for robustness weight calculation.
+#'   Options: "mad" (default), "mar" (Median Absolute Residual).
 #' @param boundary_policy Handling of edge effects. Options: "extend" (default),
-#'   "reflect", "zero".
+#'   "reflect", "zero", "noboundary".
 #' @param auto_converge Tolerance for automatic convergence. NULL (default)
 #'   disables.
 #' @param return_diagnostics Logical, whether to compute cumulative fit
@@ -79,6 +81,7 @@ smooth_streaming <- function(x,
                              delta = NULL,
                              weight_function = "tricube",
                              robustness_method = "bisquare",
+                             scaling_method = "mad",
                              boundary_policy = "extend",
                              auto_converge = NULL,
                              return_diagnostics = FALSE,
@@ -114,6 +117,7 @@ smooth_streaming <- function(x,
     delta,
     weight_function,
     robustness_method,
+    scaling_method,
     boundary_policy,
     auto_converge,
     return_diagnostics,

@@ -12,6 +12,7 @@ smooth(
   delta = NULL,
   weight_function = "tricube",
   robustness_method = "bisquare",
+  scaling_method = "mad",
   boundary_policy = "extend",
   confidence_intervals = NULL,
   prediction_intervals = NULL,
@@ -60,9 +61,12 @@ interpolation.}
 \item{robustness_method}{Method for computing robustness weights. Options:
 "bisquare" (default), "huber", "talwar".}
 
+\item{scaling_method}{Scaling method for robustness weight calculation.
+Options: "mad" (default), "mar" (Median Absolute Residual).}
+
 \item{boundary_policy}{Handling of edge effects. Options: "extend" (default),
-"reflect", "zero". "extend" pads data at boundaries to maintain symmetric
-local neighborhoods, reducing boundary bias.}
+"reflect", "zero", "noboundary". "extend" pads data at boundaries to
+maintain symmetric local neighborhoods, reducing boundary bias.}
 
 \item{confidence_intervals}{Confidence level for confidence intervals
 (e.g., 0.95 for 95 percent CI). NULL (default) disables.}

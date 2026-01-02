@@ -84,4 +84,4 @@ Integration accuracy is verified via the demo scripts. While performance benchma
 
 ## License
 
-By contributing, you agree that your work will be licensed under the project's existing license (AGPL-3.0).
+By contributing, you agree that your work will be licensed under the project's existing license.

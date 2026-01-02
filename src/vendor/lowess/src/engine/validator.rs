@@ -113,16 +113,6 @@ impl Validator {
     // Parameter Validation
     // ========================================================================
 
-    /// Validate the delta optimization parameter.
-    pub fn validate_delta<T: Float>(delta: T) -> Result<(), LowessError> {
-        if !delta.is_finite() || delta < T::zero() {
-            return Err(LowessError::InvalidDelta(
-                delta.to_f64().unwrap_or(f64::NAN),
-            ));
-        }
-        Ok(())
-    }
-
     /// Validate the smoothing fraction (bandwidth) parameter.
     pub fn validate_fraction<T: Float>(fraction: T) -> Result<(), LowessError> {
         if !fraction.is_finite() || fraction <= T::zero() || fraction > T::one() {
@@ -186,6 +176,16 @@ impl Validator {
         if !tol.is_finite() || tol <= T::zero() {
             return Err(LowessError::InvalidTolerance(
                 tol.to_f64().unwrap_or(f64::NAN),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Validate delta optimization parameter (equivalent to cell size in some contexts).
+    pub fn validate_delta<T: Float>(delta: T) -> Result<(), LowessError> {
+        if !delta.is_finite() || delta < T::zero() {
+            return Err(LowessError::InvalidDelta(
+                delta.to_f64().unwrap_or(f64::NAN),
             ));
         }
         Ok(())

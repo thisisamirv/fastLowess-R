@@ -14,6 +14,7 @@ smooth_online(
   delta = NULL,
   weight_function = "tricube",
   robustness_method = "bisquare",
+  scaling_method = "mad",
   boundary_policy = "extend",
   update_mode = "full",
   auto_converge = NULL,
@@ -54,8 +55,11 @@ maximum responsive precision.}
 \item{robustness_method}{Method for computing robustness weights. Options:
 "bisquare" (default), "huber", "talwar".}
 
+\item{scaling_method}{Scaling method for robustness weight calculation.
+Options: "mad" (default), "mar" (Median Absolute Residual).}
+
 \item{boundary_policy}{Handling of edge effects. Options: "extend" (default),
-"reflect", "zero".}
+"reflect", "zero", "noboundary".}
 
 \item{update_mode}{Update strategy. Options: "full" (default) or
 "incremental".

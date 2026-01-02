@@ -7,7 +7,9 @@
 use extendr_api::prelude::*;
 
 use fastLowess::internals::api::{
-    BoundaryPolicy, RobustnessMethod, UpdateMode, WeightFunction, ZeroWeightFallback,
+    BoundaryPolicy, RobustnessMethod,
+    ScalingMethod::{self, MAD, MAR},
+    UpdateMode, WeightFunction, ZeroWeightFallback,
 };
 use fastLowess::prelude::{
     Batch, KFold, LOOCV, Lowess as LowessBuilder, LowessResult, Online, Streaming,
@@ -66,8 +68,21 @@ fn parse_boundary_policy(name: &str) -> Result<BoundaryPolicy> {
         "extend" | "pad" => Ok(BoundaryPolicy::Extend),
         "reflect" | "mirror" => Ok(BoundaryPolicy::Reflect),
         "zero" | "none" => Ok(BoundaryPolicy::Zero),
+        "noboundary" => Ok(BoundaryPolicy::NoBoundary),
         _ => Err(Error::Other(format!(
-            "Unknown boundary policy: {}. Valid options: extend, reflect, zero",
+            "Unknown boundary policy: {}. Valid options: extend, reflect, zero, noboundary",
+            name
+        ))),
+    }
+}
+
+/// Parse scaling method from string
+fn parse_scaling_method(name: &str) -> Result<ScalingMethod> {
+    match name.to_lowercase().as_str() {
+        "mad" => Ok(MAD),
+        "mar" => Ok(MAR),
+        _ => Err(Error::Other(format!(
+            "Unknown scaling method: {}. Valid options: mad, mar",
             name
         ))),
     }
@@ -101,7 +116,8 @@ fn parse_update_mode(name: &str) -> Result<UpdateMode> {
 /// @param delta Interpolation optimization threshold (NULL to auto-calculate).
 /// @param weight_function Kernel function: "tricube", "epanechnikov", "gaussian", "uniform", "biweight", "triangle".
 /// @param robustness_method Robustness method: "bisquare", "huber", "talwar".
-/// @param boundary_policy Handling of edge effects: "extend", "reflect", "zero" (default: "extend").
+/// @param scaling_method Scaling method for robustness: "mad", "mar" (default: "mad").
+/// @param boundary_policy Handling of edge effects: "extend", "reflect", "zero", "noboundary" (default: "extend").
 /// @param confidence_intervals Confidence level for confidence intervals (e.g., 0.95), NULL to disable.
 /// @param prediction_intervals Confidence level for prediction intervals (e.g., 0.95), NULL to disable.
 /// @param return_diagnostics Whether to compute RMSE, MAE, R², etc.
@@ -125,6 +141,7 @@ fn smooth(
     delta: Nullable<f64>,
     weight_function: &str,
     robustness_method: &str,
+    scaling_method: &str,
     boundary_policy: &str,
     confidence_intervals: Nullable<f64>,
     prediction_intervals: Nullable<f64>,
@@ -140,6 +157,7 @@ fn smooth(
 ) -> Result<List> {
     let wf = parse_weight_function(weight_function)?;
     let rm = parse_robustness_method(robustness_method)?;
+    let sm = parse_scaling_method(scaling_method)?;
     let zwf = parse_zero_weight_fallback(zero_weight_fallback)?;
     let bp = parse_boundary_policy(boundary_policy)?;
 
@@ -148,6 +166,7 @@ fn smooth(
     builder = builder.iterations(iterations as usize);
     builder = builder.weight_function(wf);
     builder = builder.robustness_method(rm);
+    builder = builder.scaling_method(sm);
     builder = builder.zero_weight_fallback(zwf);
     builder = builder.boundary_policy(bp);
 
@@ -221,7 +240,8 @@ fn smooth(
 /// @param delta Interpolation optimization threshold (NULL to auto-calculate).
 /// @param weight_function Kernel function: "tricube", "epanechnikov", "gaussian", "uniform", "biweight", "triangle".
 /// @param robustness_method Robustness method: "bisquare", "huber", "talwar".
-/// @param boundary_policy Handling of edge effects: "extend", "reflect", "zero" (default: "extend").
+/// @param scaling_method Scaling method for robustness: "mad", "mar" (default: "mad").
+/// @param boundary_policy Handling of edge effects: "extend", "reflect", "zero", "noboundary" (default: "extend").
 /// @param auto_converge Tolerance for auto-convergence (NULL to disable).
 /// @param return_diagnostics Whether to compute RMSE, MAE, R², etc.
 /// @param return_robustness_weights Whether to include robustness weights in output.
@@ -240,6 +260,7 @@ fn smooth_streaming(
     delta: Nullable<f64>,
     weight_function: &str,
     robustness_method: &str,
+    scaling_method: &str,
     boundary_policy: &str,
     auto_converge: Nullable<f64>,
     return_diagnostics: bool,
@@ -259,6 +280,7 @@ fn smooth_streaming(
 
     let wf = parse_weight_function(weight_function)?;
     let rm = parse_robustness_method(robustness_method)?;
+    let sm = parse_scaling_method(scaling_method)?;
     let bp = parse_boundary_policy(boundary_policy)?;
 
     let mut builder = LowessBuilder::<f64>::new();
@@ -266,6 +288,7 @@ fn smooth_streaming(
     builder = builder.iterations(iterations as usize);
     builder = builder.weight_function(wf);
     builder = builder.robustness_method(rm);
+    builder = builder.scaling_method(sm);
     builder = builder.boundary_policy(bp);
 
     let mut builder = builder.adapter(Streaming);
@@ -374,7 +397,8 @@ fn smooth_streaming(
 /// @param delta Interpolation optimization threshold (NULL to auto-calculate).
 /// @param weight_function Kernel function: "tricube", "epanechnikov", "gaussian", "uniform", "biweight", "triangle".
 /// @param robustness_method Robustness method: "bisquare", "huber", "talwar".
-/// @param boundary_policy Handling of edge effects: "extend", "reflect", "zero" (default: "extend").
+/// @param scaling_method Scaling method for robustness: "mad", "mar" (default: "mad").
+/// @param boundary_policy Handling of edge effects: "extend", "reflect", "zero", "noboundary" (default: "extend").
 /// @param update_mode Update strategy: "full" or "incremental" (default: "full").
 /// @param auto_converge Tolerance for auto-convergence (NULL to disable).
 /// @param return_robustness_weights Whether to include robustness weights in output.
@@ -393,6 +417,7 @@ fn smooth_online(
     delta: Nullable<f64>,
     weight_function: &str,
     robustness_method: &str,
+    scaling_method: &str,
     boundary_policy: &str,
     update_mode: &str,
     auto_converge: Nullable<f64>,
@@ -401,6 +426,7 @@ fn smooth_online(
 ) -> Result<List> {
     let wf = parse_weight_function(weight_function)?;
     let rm = parse_robustness_method(robustness_method)?;
+    let sm = parse_scaling_method(scaling_method)?;
     let bp = parse_boundary_policy(boundary_policy)?;
     let um = parse_update_mode(update_mode)?;
 
@@ -409,6 +435,7 @@ fn smooth_online(
     builder = builder.iterations(iterations as usize);
     builder = builder.weight_function(wf);
     builder = builder.robustness_method(rm);
+    builder = builder.scaling_method(sm);
     builder = builder.boundary_policy(bp);
 
     let mut builder = builder.adapter(Online);

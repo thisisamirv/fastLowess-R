@@ -36,24 +36,41 @@
 
 // Feature-gated imports
 #[cfg(not(feature = "std"))]
-use alloc::{collections::VecDeque, vec::Vec};
+use alloc::collections::VecDeque;
 #[cfg(feature = "std")]
-use std::{collections::VecDeque, vec::Vec};
+use std::collections::VecDeque;
 
 // External dependencies
 use core::fmt::Debug;
 use num_traits::Float;
 
 // Internal dependencies
-use crate::algorithms::regression::{LinearRegression, ZeroWeightFallback};
+use crate::algorithms::regression::{WLSSolver, ZeroWeightFallback};
 use crate::algorithms::robustness::RobustnessMethod;
 use crate::engine::executor::{CVPassFn, FitPassFn, IntervalPassFn, SmoothPassFn};
 use crate::engine::executor::{LowessConfig, LowessExecutor};
 use crate::engine::validator::Validator;
+use crate::math::boundary::BoundaryPolicy;
 use crate::math::kernel::WeightFunction;
+use crate::math::scaling::ScalingMethod;
 use crate::primitives::backend::Backend;
+use crate::primitives::buffer::{OnlineBuffer, VecExt};
 use crate::primitives::errors::LowessError;
-use crate::primitives::partition::{BoundaryPolicy, UpdateMode};
+
+// ============================================================================
+// Update Mode
+// ============================================================================
+
+/// Update mode for online LOWESS processing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UpdateMode {
+    /// Recompute all points in the window from scratch.
+    Full,
+
+    /// Optimized incremental update.
+    #[default]
+    Incremental,
+}
 
 // ============================================================================
 // Online LOWESS Builder
@@ -94,6 +111,9 @@ pub struct OnlineLowessBuilder<T: Float> {
 
     /// Policy for handling data boundaries
     pub boundary_policy: BoundaryPolicy,
+
+    /// Scaling method for robust scale estimation (MAR/MAD)
+    pub scaling_method: ScalingMethod,
 
     /// Whether to return residuals
     pub compute_residuals: bool,
@@ -156,6 +176,7 @@ impl<T: Float> OnlineLowessBuilder<T> {
             robustness_method: RobustnessMethod::default(),
             zero_weight_fallback: ZeroWeightFallback::default(),
             boundary_policy: BoundaryPolicy::default(),
+            scaling_method: ScalingMethod::default(),
             compute_residuals: false,
             return_robustness_weights: false,
             auto_convergence: None,
@@ -323,8 +344,7 @@ impl<T: Float> OnlineLowessBuilder<T> {
             config: self,
             window_x: VecDeque::with_capacity(capacity),
             window_y: VecDeque::with_capacity(capacity),
-            scratch_x: Vec::with_capacity(capacity),
-            scratch_y: Vec::with_capacity(capacity),
+            buffer: OnlineBuffer::with_capacity(capacity),
         })
     }
 }
@@ -358,13 +378,11 @@ pub struct OnlineLowess<T: Float> {
     config: OnlineLowessBuilder<T>,
     window_x: VecDeque<T>,
     window_y: VecDeque<T>,
-    /// Pre-allocated scratch buffer for x values during smoothing
-    scratch_x: Vec<T>,
-    /// Pre-allocated scratch buffer for y values during smoothing
-    scratch_y: Vec<T>,
+    /// Pre-allocated scratch buffers for smoothing
+    buffer: OnlineBuffer<T>,
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> OnlineLowess<T> {
+impl<T: Float + WLSSolver + Debug + Send + Sync + 'static> OnlineLowess<T> {
     /// Add a new point and get its smoothed value.
     pub fn add_point(&mut self, x: T, y: T) -> Result<Option<OnlineOutput<T>>, LowessError> {
         // Validate new point
@@ -387,13 +405,12 @@ impl<T: Float + Debug + Send + Sync + 'static> OnlineLowess<T> {
         }
 
         // Convert window to vectors for smoothing using scratch buffers
-        self.scratch_x.clear();
-        self.scratch_y.clear();
-        self.scratch_x.extend(self.window_x.iter().copied());
-        self.scratch_y.extend(self.window_y.iter().copied());
+        self.buffer.clear(); // Clear buffers
+        self.buffer.scratch_x.extend(self.window_x.iter().copied());
+        self.buffer.scratch_y.extend(self.window_y.iter().copied());
 
-        let x_vec = &self.scratch_x;
-        let y_vec = &self.scratch_y;
+        let x_vec = &*self.buffer.scratch_x;
+        let y_vec = &*self.buffer.scratch_y;
 
         // Special case: exactly two points, use exact linear fit
         if x_vec.len() == 2 {
@@ -404,7 +421,7 @@ impl<T: Float + Debug + Send + Sync + 'static> OnlineLowess<T> {
 
             let smoothed = if x1 != x0 {
                 let slope = (y1 - y0) / (x1 - x0);
-                y0 + slope * (x1 - x0)
+                y0 + slope * (x - x0)
             } else {
                 // Identical x: use mean for stability
                 (y0 + y1) / T::from(2.0).unwrap()
@@ -435,9 +452,9 @@ impl<T: Float + Debug + Send + Sync + 'static> OnlineLowess<T> {
                     .max(2)
                     .min(n);
 
-                let fitter = LinearRegression;
-                let mut weights = vec![T::zero(); n];
-                let robustness_weights = vec![T::one(); n];
+                // Use pre-allocated scratch buffers
+                VecExt::assign(self.buffer.weights.as_vec_mut(), n, T::zero());
+                VecExt::assign(self.buffer.robustness_weights.as_vec_mut(), n, T::one());
 
                 let (smoothed_val, _) = LowessExecutor::fit_single_point(
                     x_vec,
@@ -445,11 +462,10 @@ impl<T: Float + Debug + Send + Sync + 'static> OnlineLowess<T> {
                     n - 1, // Latest point
                     window_size,
                     false, // No robustness for single point
-                    &robustness_weights,
-                    &mut weights,
+                    &self.buffer.robustness_weights,
+                    &mut self.buffer.weights,
                     self.config.weight_function,
                     self.config.zero_weight_fallback,
-                    &fitter,
                 );
 
                 (smoothed_val, None, Some(T::one()))
@@ -464,6 +480,7 @@ impl<T: Float + Debug + Send + Sync + 'static> OnlineLowess<T> {
                     robustness_method: self.config.robustness_method,
                     zero_weight_fallback: zero_flag,
                     boundary_policy: self.config.boundary_policy,
+                    scaling_method: self.config.scaling_method,
                     auto_convergence: self.config.auto_convergence,
                     cv_fractions: None,
                     cv_kind: None,
@@ -517,5 +534,6 @@ impl<T: Float + Debug + Send + Sync + 'static> OnlineLowess<T> {
     pub fn reset(&mut self) {
         self.window_x.clear();
         self.window_y.clear();
+        self.buffer.clear();
     }
 }

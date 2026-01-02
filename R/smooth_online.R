@@ -36,8 +36,10 @@
 #'   "triangle", "cosine".
 #' @param robustness_method Method for computing robustness weights. Options:
 #'   "bisquare" (default), "huber", "talwar".
+#' @param scaling_method Scaling method for robustness weight calculation.
+#'   Options: "mad" (default), "mar" (Median Absolute Residual).
 #' @param boundary_policy Handling of edge effects. Options: "extend" (default),
-#'   "reflect", "zero".
+#'   "reflect", "zero", "noboundary".
 #' @param update_mode Update strategy. Options: "full" (default) or
 #'   "incremental".
 #'   \itemize{
@@ -82,6 +84,7 @@ smooth_online <- function(x,
                           delta = NULL,
                           weight_function = "tricube",
                           robustness_method = "bisquare",
+                          scaling_method = "mad",
                           boundary_policy = "extend",
                           update_mode = "full",
                           auto_converge = NULL,
@@ -114,6 +117,7 @@ smooth_online <- function(x,
     delta,
     weight_function,
     robustness_method,
+    scaling_method,
     boundary_policy,
     update_mode,
     auto_converge,

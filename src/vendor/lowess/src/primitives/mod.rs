@@ -30,11 +30,11 @@ pub mod sorting;
 /// Windowing logic.
 pub mod window;
 
-/// Partition and merge utilities for chunked data processing.
-pub mod partition;
-
 /// Shared error types.
 pub mod errors;
 
 /// Execution backend configuration.
 pub mod backend;
+
+/// Buffer management.
+pub mod buffer;

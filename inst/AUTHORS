@@ -4,6 +4,10 @@ Package: autocfg (1.5.0)
 Authors: Josh Stone <cuviper@gmail.com>
 License: Apache-2.0 OR MIT
 ----------------------------------------
+Package: bytemuck (1.24.0)
+Authors: Lokathor <zefria@gmail.com>
+License: Zlib OR Apache-2.0 OR MIT
+----------------------------------------
 Package: crossbeam-deque (0.8.6)
 Authors: 
 License: MIT OR Apache-2.0
@@ -32,17 +36,17 @@ Package: extendr-macros (0.8.1)
 Authors: andy-thomason <andy@andythomason.com>, Thomas Down, Mossa Merhi Reimert <mossa@sund.ku.dk>, Josiah Parry <josiah.parry@gmail.com>, Claus O. Wilke <wilke@austin.utexas.edu>, Hiroaki Yutani, Ilia A. Kosenkov <ilia.kosenkov@outlook.com>, Michael Milton <michael.r.milton@gmail.com>
 License: MIT
 ----------------------------------------
-Package: fastLowess (0.3.0)
+Package: fastLowess (0.4.0)
 Authors: Amir Valizadeh <thisisamirv@gmail.com>
-License: AGPL-3.0-or-later
+License: MIT OR Apache-2.0
 ----------------------------------------
 Package: libm (0.2.15)
 Authors: Jorge Aparicio <jorge@japaric.io>
 License: MIT
 ----------------------------------------
-Package: lowess (0.6.0)
+Package: lowess (0.7.0)
 Authors: Amir Valizadeh <thisisamirv@gmail.com>
-License: AGPL-3.0-or-later
+License: MIT OR Apache-2.0
 ----------------------------------------
 Package: matrixmultiply (0.3.10)
 Authors: bluss, R. Janis Goldschmidt
@@ -100,6 +104,10 @@ Package: rayon-core (1.13.0)
 Authors: 
 License: MIT OR Apache-2.0
 ----------------------------------------
+Package: safe_arch (1.0.0)
+Authors: Lokathor <zefria@gmail.com>
+License: Zlib OR Apache-2.0 OR MIT
+----------------------------------------
 Package: syn (2.0.111)
 Authors: David Tolnay <dtolnay@gmail.com>
 License: MIT OR Apache-2.0
@@ -107,4 +115,8 @@ License: MIT OR Apache-2.0
 Package: unicode-ident (1.0.22)
 Authors: David Tolnay <dtolnay@gmail.com>
 License: (MIT OR Apache-2.0) AND Unicode-3.0
+----------------------------------------
+Package: wide (1.1.1)
+Authors: Lokathor <zefria@gmail.com>
+License: Zlib OR Apache-2.0 OR MIT
 ----------------------------------------

@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0]
+
+### Added
+
+- Added `NoBoundary` variant to `BoundaryPolicy` enum, allowing users to disable boundary padding entirely (original Cleveland behavior).
+- Added `ScalingMethod` enum with `MAR` (Median Absolute Residual) and `MAD` (Median Absolute Deviation) variants for configurable robust scale estimation.
+- Added SIMD-optimized weighted least squares accumulation for `f64` (using `f64x2`) and `f32` (using `f32x8`) via the `wide` crate.
+- Added `WLSSolver` trait for type-specific SIMD dispatch in regression computations.
+- Added `CVBuffer` struct in `primitives/buffer.rs` for pre-allocated cross-validation scratch buffers.
+- Added `VecExt` trait in `primitives/buffer.rs` for efficient vector reuse via `assign` and `assign_slice`.
+- Added persistent scratch buffers to `OnlineBuffer` and `StreamingBuffer` to eliminate allocations in hot loops.
+
+### Changed
+
+- Changed license from AGPL-3.0-or-later to dual MIT OR Apache-2.0.
+- Refactored partition-related types: moved `SortResult` from inline struct to `primitives/sorting.rs`.
+- Replaced `RangeInclusive` iterations with `while` loops in `RegressionContext::fit` for improved performance.
+- Optimized `compute_window_weights` with `while` loops instead of iterator-based loops.
+- Optimized `median_inplace` in `ScalingMethod` with `while` loop for finding the largest value in the lower half.
+- Added boundary thresholds (`h1`, `h9`) to weight computation for numerical stability at near-zero and near-boundary distances.
+- Unified scale estimation logic under `ScalingMethod`, replacing the previous `mad.rs` module.
+- Refactored `LowessExecutor` to accept optional external buffers, enabling callers to manage and reuse scratch space.
+- Optimized K-Fold Cross-Validation performance by moving training data preparation and sorting outside the candidate evaluation loop.
+- Moved `auto_convergence` and `interval_method` into `LowessExecutor` for better encapsulation during buffered execution.
+
 ## [0.6.0]
 
 ### Added

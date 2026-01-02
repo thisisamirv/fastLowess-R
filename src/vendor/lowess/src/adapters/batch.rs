@@ -44,7 +44,7 @@ use num_traits::Float;
 
 // Internal dependencies
 use crate::algorithms::interpolation::calculate_delta;
-use crate::algorithms::regression::ZeroWeightFallback;
+use crate::algorithms::regression::{WLSSolver, ZeroWeightFallback};
 use crate::algorithms::robustness::RobustnessMethod;
 use crate::engine::executor::{CVPassFn, FitPassFn, IntervalPassFn, SmoothPassFn};
 use crate::engine::executor::{LowessConfig, LowessExecutor};
@@ -53,10 +53,11 @@ use crate::engine::validator::Validator;
 use crate::evaluation::cv::CVKind;
 use crate::evaluation::diagnostics::Diagnostics;
 use crate::evaluation::intervals::IntervalMethod;
+use crate::math::boundary::BoundaryPolicy;
 use crate::math::kernel::WeightFunction;
+use crate::math::scaling::ScalingMethod;
 use crate::primitives::backend::Backend;
 use crate::primitives::errors::LowessError;
-use crate::primitives::partition::BoundaryPolicy;
 use crate::primitives::sorting::{sort_by_x, unsort};
 
 // ============================================================================
@@ -113,6 +114,9 @@ pub struct BatchLowessBuilder<T: Float> {
 
     /// Policy for handling data boundaries
     pub boundary_policy: BoundaryPolicy,
+
+    /// Scaling method for robust scale estimation (MAR/MAD)
+    pub scaling_method: ScalingMethod,
 
     // ++++++++++++++++++++++++++++++++++++++
     // +               DEV                  +
@@ -172,6 +176,7 @@ impl<T: Float> BatchLowessBuilder<T> {
             return_robustness_weights: false,
             zero_weight_fallback: ZeroWeightFallback::default(),
             boundary_policy: BoundaryPolicy::default(),
+            scaling_method: ScalingMethod::default(),
             custom_smooth_pass: None,
             custom_cv_pass: None,
             custom_interval_pass: None,
@@ -352,7 +357,7 @@ impl<T: Float> BatchLowessBuilder<T> {
         if let Some(ref fracs) = self.cv_fractions {
             Validator::validate_cv_fractions(fracs)?;
         }
-        if let Some(crate::evaluation::cv::CVKind::KFold(k)) = self.cv_kind {
+        if let Some(CVKind::KFold(k)) = self.cv_kind {
             Validator::validate_kfold(k)?;
         }
 
@@ -374,7 +379,7 @@ pub struct BatchLowess<T: Float> {
     config: BatchLowessBuilder<T>,
 }
 
-impl<T: Float + Debug + Send + Sync + 'static> BatchLowess<T> {
+impl<T: Float + WLSSolver + Debug + Send + Sync + 'static> BatchLowess<T> {
     /// Perform LOWESS smoothing on the provided data.
     pub fn fit(self, x: &[T], y: &[T]) -> Result<LowessResult<T>, LowessError> {
         Validator::validate_inputs(x, y)?;
@@ -398,6 +403,7 @@ impl<T: Float + Debug + Send + Sync + 'static> BatchLowess<T> {
             auto_convergence: self.config.auto_convergence,
             return_variance: self.config.interval_type,
             boundary_policy: self.config.boundary_policy,
+            scaling_method: self.config.scaling_method,
             cv_seed: self.config.cv_seed,
             // ++++++++++++++++++++++++++++++++++++++
             // +               DEV                  +
@@ -448,14 +454,12 @@ impl<T: Float + Debug + Send + Sync + 'static> BatchLowess<T> {
 
         // Compute intervals
         let (conf_lower, conf_upper, pred_lower, pred_upper) =
-            if let Some(method) = &self.config.interval_type {
-                if let Some(se) = &std_errors {
-                    method.compute_intervals(&y_smooth, se, &residuals)?
-                } else {
-                    (None, None, None, None)
+            match (&self.config.interval_type, &std_errors) {
+                (Some(method), Some(se)) => {
+                    let (cl, cu, pl, pu) = method.compute_intervals(&y_smooth, se, &residuals)?;
+                    (cl, cu, pl, pu)
                 }
-            } else {
-                (None, None, None, None)
+                _ => (None, None, None, None),
             };
 
         // Unsort results using sorting module

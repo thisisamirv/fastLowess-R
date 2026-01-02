@@ -39,9 +39,11 @@
 #'   "triangle", "cosine".
 #' @param robustness_method Method for computing robustness weights. Options:
 #'   "bisquare" (default), "huber", "talwar".
+#' @param scaling_method Scaling method for robustness weight calculation.
+#'   Options: "mad" (default), "mar" (Median Absolute Residual).
 #' @param boundary_policy Handling of edge effects. Options: "extend" (default),
-#'   "reflect", "zero". "extend" pads data at boundaries to maintain symmetric
-#'   local neighborhoods, reducing boundary bias.
+#'   "reflect", "zero", "noboundary". "extend" pads data at boundaries to
+#'   maintain symmetric local neighborhoods, reducing boundary bias.
 #' @param confidence_intervals Confidence level for confidence intervals
 #'   (e.g., 0.95 for 95 percent CI). NULL (default) disables.
 #' @param prediction_intervals Confidence level for prediction intervals
@@ -108,6 +110,7 @@ smooth <- function(x,
                    delta = NULL,
                    weight_function = "tricube",
                    robustness_method = "bisquare",
+                   scaling_method = "mad",
                    boundary_policy = "extend",
                    confidence_intervals = NULL,
                    prediction_intervals = NULL,
@@ -144,6 +147,7 @@ smooth <- function(x,
     delta,
     weight_function,
     robustness_method,
+    scaling_method,
     boundary_policy,
     confidence_intervals,
     prediction_intervals,

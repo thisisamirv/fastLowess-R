@@ -25,7 +25,6 @@
 //! * Window indices always remain within the caller-provided array bounds.
 //! * The window correctly captures the q nearest neighbors for a given target point.
 //!
-//!
 //! ## Non-goals
 //!
 //! * This module does not handle data sorting (handled by `sorting` module).
@@ -126,8 +125,22 @@ impl Window {
     /// Calculate window size q from fraction alpha and data length n.
     #[inline]
     pub fn calculate_span<T: Float>(n: usize, frac: T) -> usize {
-        let frac_n = frac * T::from(n).unwrap();
+        let epsilon = T::from(1e-5).unwrap();
+        let frac_n = frac * T::from(n).unwrap() + epsilon;
         let frac_n_int = frac_n.to_usize().unwrap_or(0);
         usize::max(2, usize::min(n, frac_n_int))
+    }
+
+    /// Check if the window is empty.
+    #[allow(dead_code)]
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Get the number of points in the window.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.right - self.left + 1
     }
 }

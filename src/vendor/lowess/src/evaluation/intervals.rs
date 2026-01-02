@@ -40,7 +40,7 @@ use std::vec::Vec;
 use num_traits::Float;
 
 // Internal dependencies
-use crate::math::mad::compute_mad;
+use crate::math::scaling::ScalingMethod;
 use crate::primitives::errors::LowessError;
 use crate::primitives::window::Window;
 
@@ -137,8 +137,8 @@ impl<T: Float> IntervalMethod<T> {
     // ========================================================================
 
     /// Estimate the residual standard deviation using a robust method.
-    /// sigma_hat = 1.4826 * MAD(residuals).
-    fn calculate_residual_sd(residuals: &[T]) -> T {
+    /// Default sigma_hat = 1.4826 * MAD(residuals).
+    pub fn calculate_residual_sd(residuals: &[T]) -> T {
         let n = residuals.len();
         let scale_const = T::from(Self::MAD_TO_STD_FACTOR).unwrap();
 
@@ -147,7 +147,7 @@ impl<T: Float> IntervalMethod<T> {
         }
 
         let mut vals = residuals.to_vec();
-        let mad = compute_mad(&mut vals);
+        let mad = ScalingMethod::MAD.compute(&mut vals);
         if mad > T::zero() {
             mad * scale_const
         } else {
@@ -284,9 +284,9 @@ impl<T: Float> IntervalMethod<T> {
 
         // Compute prediction intervals if requested
         let (mut pred_lower, mut pred_upper) = if self.prediction {
-            let residual_sd = Self::calculate_residual_sd(residuals);
+            let rsd = Self::calculate_residual_sd(residuals);
             let (lower, upper) = self
-                .compute_prediction_intervals_impl(y_smooth, std_errors, residual_sd)
+                .compute_prediction_intervals_impl(y_smooth, std_errors, rsd)
                 .map_err(|_| LowessError::InvalidIntervals(self.level.to_f64().unwrap_or(0.0)))?;
             (Some(lower), Some(upper))
         } else {
@@ -324,8 +324,6 @@ impl<T: Float> IntervalMethod<T> {
         Ok((conf_lower, conf_upper, pred_lower, pred_upper))
     }
 
-    /// Implementation of confidence interval calculation.
-    /// CI = y_hat +/- z * SE
     fn compute_confidence_intervals_impl(
         &self,
         y_smooth: &[T],
@@ -348,8 +346,6 @@ impl<T: Float> IntervalMethod<T> {
         Ok((lower, upper))
     }
 
-    /// Implementation of prediction interval calculation.
-    /// PI = y_hat +/- z * sqrt(SE^2 + sigma^2)
     fn compute_prediction_intervals_impl(
         &self,
         y_smooth: &[T],

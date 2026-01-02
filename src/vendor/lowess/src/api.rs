@@ -44,13 +44,16 @@ use crate::evaluation::intervals::IntervalMethod;
 use crate::primitives::backend::Backend;
 
 // Publicly re-exported types
+pub use crate::adapters::online::UpdateMode;
+pub use crate::adapters::streaming::MergeStrategy;
 pub use crate::algorithms::regression::ZeroWeightFallback;
 pub use crate::algorithms::robustness::RobustnessMethod;
 pub use crate::engine::output::LowessResult;
 pub use crate::evaluation::cv::{KFold, LOOCV};
+pub use crate::math::boundary::BoundaryPolicy;
 pub use crate::math::kernel::WeightFunction;
+pub use crate::math::scaling::ScalingMethod;
 pub use crate::primitives::errors::LowessError;
-pub use crate::primitives::partition::{BoundaryPolicy, MergeStrategy, UpdateMode};
 
 /// Marker types for selecting execution adapters.
 #[allow(non_snake_case)]
@@ -75,6 +78,9 @@ pub struct LowessBuilder<T> {
 
     /// Outlier downweighting method.
     pub robustness_method: Option<RobustnessMethod>,
+
+    /// Scaling method for robust scale estimation (MAR/MAD).
+    pub scaling_method: Option<ScalingMethod>,
 
     /// interval estimation configuration.
     pub interval_type: Option<IntervalMethod<T>>,
@@ -175,6 +181,7 @@ impl<T: Float> LowessBuilder<T> {
             delta: None,
             weight_function: None,
             robustness_method: None,
+            scaling_method: None,
             interval_type: None,
             cv_fractions: None,
             cv_kind: None,
@@ -314,6 +321,15 @@ impl<T: Float> LowessBuilder<T> {
             self.duplicate_param = Some("robustness_method");
         }
         self.robustness_method = Some(rm);
+        self
+    }
+
+    /// Set the scaling method for robust scale estimation.
+    pub fn scaling_method(mut self, sm: ScalingMethod) -> Self {
+        if self.scaling_method.is_some() {
+            self.duplicate_param = Some("scaling_method");
+        }
+        self.scaling_method = Some(sm);
         self
     }
 
@@ -490,6 +506,9 @@ impl<T: Float> LowessAdapter<T> for Batch {
         if let Some(bp) = builder.boundary_policy {
             result.boundary_policy = bp;
         }
+        if let Some(sm) = builder.scaling_method {
+            result.scaling_method = sm;
+        }
 
         if let Some(rw) = builder.return_robustness_weights {
             result.return_robustness_weights = rw;
@@ -566,6 +585,9 @@ impl<T: Float> LowessAdapter<T> for Streaming {
         }
         if let Some(ms) = builder.merge_strategy {
             result.merge_strategy = ms;
+        }
+        if let Some(sm) = builder.scaling_method {
+            result.scaling_method = sm;
         }
 
         if let Some(rw) = builder.return_robustness_weights {
@@ -646,6 +668,9 @@ impl<T: Float> LowessAdapter<T> for Online {
         }
         if let Some(zwf) = builder.zero_weight_fallback {
             result.zero_weight_fallback = zwf;
+        }
+        if let Some(sm) = builder.scaling_method {
+            result.scaling_method = sm;
         }
 
         if let Some(cr) = builder.compute_residuals {

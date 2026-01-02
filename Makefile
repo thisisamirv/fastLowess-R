@@ -1,5 +1,5 @@
 # Run all local checks (formatting, linting, building, tests, docs)
-check: fmt clippy vendor-update build test doc check-CMD cran
+check: vendor-update fmt clippy build test doc check-CMD cran
 	@echo "All checks completed successfully!"
 
 # Formatting

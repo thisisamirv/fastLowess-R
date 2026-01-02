@@ -40,7 +40,7 @@ use std::vec::Vec;
 
 // External dependencies
 use core::cmp::Ordering;
-use core::fmt::{Display, Formatter, Result};
+use core::fmt::{Debug, Display, Formatter, Result};
 use num_traits::Float;
 
 // Internal dependencies
@@ -128,11 +128,11 @@ impl<T: Float> LowessResult<T> {
 // Display Implementation
 // ============================================================================
 
-impl<T: Float + Display> Display for LowessResult<T> {
+impl<T: Float + Display + Debug> Display for LowessResult<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         writeln!(f, "Summary:")?;
         writeln!(f, "  Data points: {}", self.x.len())?;
-        writeln!(f, "  Fraction: {}", self.fraction_used)?;
+        writeln!(f, "  Fraction:    {}", self.fraction_used)?;
 
         if let Some(iters) = self.iterations_used {
             writeln!(f, "  Iterations: {}", iters)?;

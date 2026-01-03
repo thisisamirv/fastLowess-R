@@ -72,57 +72,40 @@
 #' lines(result$x, result$y, col = "red", lwd = 2)
 #'
 #' @export
-smooth_streaming <- function(x,
-                             y,
-                             fraction = 0.3,
-                             chunk_size = 5000L,
-                             overlap = NULL,
-                             iterations = 3L,
-                             delta = NULL,
-                             weight_function = "tricube",
-                             robustness_method = "bisquare",
-                             scaling_method = "mad",
-                             boundary_policy = "extend",
-                             auto_converge = NULL,
-                             return_diagnostics = FALSE,
-                             return_robustness_weights = FALSE,
-                             parallel = TRUE) {
-  # Validate inputs
-  if (length(x) != length(y)) {
-    stop("x and y must have the same length")
-  }
-  if (length(x) < 3) {
-    stop("At least 3 data points are required")
-  }
+smooth_streaming <- function(
+    x,
+    y,
+    fraction = 0.3,
+    chunk_size = 5000L,
+    overlap = NULL,
+    iterations = 3L,
+    delta = NULL,
+    weight_function = "tricube",
+    robustness_method = "bisquare",
+    scaling_method = "mad",
+    boundary_policy = "extend",
+    auto_converge = NULL,
+    return_diagnostics = FALSE,
+    return_robustness_weights = FALSE,
+    parallel = TRUE
+) {
+    args <- validate_common_args(x, y, fraction, iterations)
+    x <- args$x
+    y <- args$y
+    fraction <- args$fraction
+    iterations <- args$iterations
 
-  # Ensure proper types
-  x <- as.double(x)
-  y <- as.double(y)
-  fraction <- as.double(fraction)
-  chunk_size <- as.integer(chunk_size)
-  iterations <- as.integer(iterations)
+    chunk_size <- as.integer(chunk_size)
 
-  if (!is.null(overlap)) {
-    overlap <- as.integer(overlap)
-  }
+    if (!is.null(overlap)) {
+        overlap <- as.integer(overlap)
+    }
 
-  # Call the Rust function
-  .Call(
-    "wrap__smooth_streaming",
-    x, y,
-    fraction,
-    chunk_size,
-    overlap,
-    iterations,
-    delta,
-    weight_function,
-    robustness_method,
-    scaling_method,
-    boundary_policy,
-    auto_converge,
-    return_diagnostics,
-    return_robustness_weights,
-    parallel,
-    PACKAGE = "fastlowess"
-  )
+    # Call the Rust function
+    .Call("wrap__smooth_streaming", x, y, fraction, chunk_size, overlap,
+        iterations, delta, weight_function, robustness_method, scaling_method,
+        boundary_policy, auto_converge, return_diagnostics,
+        return_robustness_weights, parallel,
+        PACKAGE = "fastlowess"
+    )
 }

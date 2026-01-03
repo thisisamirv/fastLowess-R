@@ -75,54 +75,37 @@
 #' lines(result$x, result$y, col = "red", lwd = 2)
 #'
 #' @export
-smooth_online <- function(x,
-                          y,
-                          fraction = 0.2,
-                          window_capacity = 100L,
-                          min_points = 3L,
-                          iterations = 3L,
-                          delta = NULL,
-                          weight_function = "tricube",
-                          robustness_method = "bisquare",
-                          scaling_method = "mad",
-                          boundary_policy = "extend",
-                          update_mode = "full",
-                          auto_converge = NULL,
-                          return_robustness_weights = FALSE,
-                          parallel = FALSE) {
-  # Validate inputs
-  if (length(x) != length(y)) {
-    stop("x and y must have the same length")
-  }
-  if (length(x) < 3) {
-    stop("At least 3 data points are required")
-  }
+smooth_online <- function(
+    x,
+    y,
+    fraction = 0.2,
+    window_capacity = 100L,
+    min_points = 3L,
+    iterations = 3L,
+    delta = NULL,
+    weight_function = "tricube",
+    robustness_method = "bisquare",
+    scaling_method = "mad",
+    boundary_policy = "extend",
+    update_mode = "full",
+    auto_converge = NULL,
+    return_robustness_weights = FALSE,
+    parallel = FALSE
+) {
+    args <- validate_common_args(x, y, fraction, iterations)
+    x <- args$x
+    y <- args$y
+    fraction <- args$fraction
+    iterations <- args$iterations
 
-  # Ensure proper types
-  x <- as.double(x)
-  y <- as.double(y)
-  fraction <- as.double(fraction)
-  window_capacity <- as.integer(window_capacity)
-  min_points <- as.integer(min_points)
-  iterations <- as.integer(iterations)
+    window_capacity <- as.integer(window_capacity)
+    min_points <- as.integer(min_points)
 
-  # Call the Rust function
-  .Call(
-    "wrap__smooth_online",
-    x, y,
-    fraction,
-    window_capacity,
-    min_points,
-    iterations,
-    delta,
-    weight_function,
-    robustness_method,
-    scaling_method,
-    boundary_policy,
-    update_mode,
-    auto_converge,
-    return_robustness_weights,
-    parallel,
-    PACKAGE = "fastlowess"
-  )
+    # Call the Rust function
+    .Call("wrap__smooth_online", x, y, fraction, window_capacity, min_points,
+        iterations, delta, weight_function, robustness_method, scaling_method,
+        boundary_policy, update_mode, auto_converge, return_robustness_weights,
+        parallel,
+        PACKAGE = "fastlowess"
+    )
 }

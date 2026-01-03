@@ -33,6 +33,7 @@ target/
 \.idea
 
 # Development files
+.lintr
 ^Makefile$
 ^fastlowess_.*\.tar\.gz$
 ^\.Rbuildignore$
@@ -41,3 +42,4 @@ target/
 ^doc$
 ^Meta$
 ^_pkgdown\.yml$
+^fastlowess\.BiocCheck$

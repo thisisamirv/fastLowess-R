@@ -39,7 +39,7 @@ if [ "$IS_WASM" = "1" ]; then
     # For WASM, do NOT use --whole-archive or legacy -u flags
     # We add -s EXPORT_ALL=0 to prevent internal Rust symbols from causing errors
     # and explicitly list our required entry points.
-    UNDEFINED_FLAGS="-L${TARGET_DIR}/release -lfastlowess -s EXPORT_ALL=0 -s EXPORTED_FUNCTIONS=['_R_init_fastlowess','_wrap__smooth','_wrap__smooth_streaming','_wrap__smooth_online']"
+    UNDEFINED_FLAGS="-s SIDE_MODULE=2 -L${TARGET_DIR}/release -lfastlowess -s EXPORT_ALL=0 -s EXPORTED_FUNCTIONS=['_R_init_fastlowess','_wrap__smooth','_wrap__smooth_streaming','_wrap__smooth_online']"
 elif [ "$UNAME" = "Darwin" ]; then
     echo "Configuring for macOS..."
     # On macOS, use -force_load with explicit path to include only needed symbols

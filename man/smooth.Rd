@@ -143,9 +143,9 @@ lines(result$x, result$y, col = "red", lwd = 2)
 
 # Robust smoothing with intervals
 result <- smooth(x, y,
-  fraction = 0.5, iterations = 5,
-  confidence_intervals = 0.95,
-  prediction_intervals = 0.95
+    fraction = 0.5, iterations = 5,
+    confidence_intervals = 0.95,
+    prediction_intervals = 0.95
 )
 lines(result$x, result$confidence_lower, col = "blue", lty = 2)
 lines(result$x, result$confidence_upper, col = "blue", lty = 2)

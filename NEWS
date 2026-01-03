@@ -1,0 +1,6 @@
+fastlowess 0.99.1
+
+* New submission to Bioconductor.
+* Implemented high-performance LOWESS smoothing using Rust backend.
+* Added support for parallel execution, robustness iterations, and cross-validation.
+* Includes streaming and online smoothing capabilities.

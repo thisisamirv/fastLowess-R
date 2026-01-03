@@ -2,6 +2,7 @@
 % Please edit documentation in R/fastLowess-package.R
 \docType{package}
 \name{fastlowess-package}
+\alias{fastlowess}
 \alias{fastlowess-package}
 \title{fastlowess: High-performance LOWESS (Locally Weighted Scatterplot Smoothing)
 for R}
@@ -64,7 +65,6 @@ fastlowess is designed for performance and production use. It supports:
 }
 
 \examples{
-\dontrun{
 # Run available demos:
 demo(package = "fastlowess")
 
@@ -79,6 +79,17 @@ demo("online_smoothing", package = "fastlowess", ask = FALSE)
 # 3. Streaming Smoothing Demo
 # Illustrates chunked processing for datasets larger than memory.
 demo("streaming_smoothing", package = "fastlowess", ask = FALSE)
+
 }
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/thisisamirv/fastLowess-R}
+  \item Report bugs at \url{https://github.com/thisisamirv/fastLowess-R/issues}
+}
+
+}
+\author{
+\strong{Maintainer}: Amir Valizadeh \email{thisisamirv@gmail.com} (\href{https://orcid.org/0000-0001-5983-8527}{ORCID})
 
 }

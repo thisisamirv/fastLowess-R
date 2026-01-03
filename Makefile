@@ -95,7 +95,7 @@ check-all: check check-cran bioccheck
 # R CMD check
 check-cran: build-r
 	@echo "Running R CMD check --as-cran..."
-	R CMD check --as-cran $(PKG_TARBALL)
+	R_MAKEVARS_USER=$(PWD)/scripts/Makevars.check R CMD check --as-cran $(PKG_TARBALL)
 
 # BiocCheck
 bioccheck: build-r
@@ -177,9 +177,9 @@ vignettes:
 	@echo "Building vignettes..."
 	Rscript -e "devtools::build_vignettes()"
 
-# ==============================================================================
-# Maintenance
-# ==============================================================================
+# ============================================================================== #
+# Vendor Update
+# ============================================================================== #
 
 vendor-update:
 	@echo "Updating and re-vendoring crates.io dependencies..."
@@ -196,6 +196,10 @@ vendor-update:
 	@(cd src && tar --sort=name --mtime='1970-01-01 00:00:00Z' --owner=0 --group=0 --numeric-owner --xz --create --file=vendor.tar.xz vendor)
 	@rm -rf src/vendor
 	@echo "Vendor update complete. Archive: src/vendor.tar.xz"
+
+# ==============================================================================
+# Maintenance
+# ==============================================================================
 
 clean: clean-rust clean-r
 

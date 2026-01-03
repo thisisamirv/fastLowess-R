@@ -56,7 +56,6 @@
 #' }
 #'
 #' @examples
-#' \dontrun{
 #' # Run available demos:
 #' demo(package = "fastlowess")
 #'
@@ -71,10 +70,7 @@
 #' # 3. Streaming Smoothing Demo
 #' # Illustrates chunked processing for datasets larger than memory.
 #' demo("streaming_smoothing", package = "fastlowess", ask = FALSE)
-#' }
 #'
-#' @docType package
-#' @name fastlowess-package
 #' @useDynLib fastlowess, .registration = TRUE
 #' @importFrom stats smooth
-NULL
+"_PACKAGE"

@@ -20,7 +20,7 @@ categories = ["science", "algorithms"]
 
 include = ["Cargo.toml", "lib.rs", "vendor/**/*", "README.md", "LICENSE"]
 
-# Build - use crates.io versions temporarily for vendoring
+# Build
 [dependencies]
 fastLowess = { path = "vendor/fastLowess", version = "0.4", features = ["dev"] }
 extendr-api = "0.8.1"
@@ -36,18 +36,15 @@ dev = []
 
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = "fat"
 codegen-units = 1
+# Strip debug symbols (helps reduce WASM binary size)
+strip = "symbols"
 
 # Document all features
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
-
-
-
-
-
 
 [patch.crates-io]
 lowess = { path = "vendor/lowess" }

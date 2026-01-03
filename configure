@@ -36,10 +36,12 @@ if [ "$IS_WASM" = "1" ]; then
     # For WASM/WebR, keep target dir local to avoid rwasm copy issues
     TARGET_DIR="./target"
     GC_SECTIONS="-Wl,--gc-sections"
-    # For WASM, do NOT use --whole-archive or legacy -u flags
-    # We add -s EXPORT_ALL=0 to prevent internal Rust symbols from causing errors
-    # and explicitly list our required entry points.
-    UNDEFINED_FLAGS="-s SIDE_MODULE=2 -L${TARGET_DIR}/release -lrfastlowess -s EXPORT_ALL=0 -s EXPORTED_FUNCTIONS=['_R_init_rfastlowess','_wrap__smooth','_wrap__smooth_streaming','_wrap__smooth_online']"
+    # For WASM, we need to:
+    # 1. Use SIDE_MODULE=2 (new side module format)
+    # 2. Set EXPORT_ALL=0 to only export specified functions
+    # 3. List our entry points in EXPORTED_FUNCTIONS
+    # 4. Set ERROR_ON_UNDEFINED_SYMBOLS=0 - undefined Rust std symbols will be resolved at runtime
+    UNDEFINED_FLAGS="-s SIDE_MODULE=2 -L${TARGET_DIR}/release -lrfastlowess -s EXPORT_ALL=0 -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s 'EXPORTED_FUNCTIONS=[\"_R_init_rfastlowess\",\"_wrap__smooth\",\"_wrap__smooth_streaming\",\"_wrap__smooth_online\"]'"
 elif [ "$UNAME" = "Darwin" ]; then
     echo "Configuring for macOS..."
     # On macOS, use -force_load with explicit path to include only needed symbols

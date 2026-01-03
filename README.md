@@ -135,7 +135,7 @@ The `rfastlowess` package is a **numerical twin** of R's `lowess` implementation
 | **Consistency** | ✅ PERFECT     | 15/15 scenarios pass with strict tolerance |
 | **Robustness**  | ✅ VERIFIED    | Robust smoothing matches R exactly         |
 
-Check [Validation](https://github.com/thisisamirv/fastLowess-R/tree/bench/validation) for detailed scenario results.
+Check [Validation](https://github.com/thisisamirv/rfastlowess/tree/bench/validation) for detailed scenario results.
 
 ## Installation
 

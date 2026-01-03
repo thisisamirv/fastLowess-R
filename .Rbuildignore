@@ -1,6 +1,7 @@
 # Cargo build artifacts
 ^target$
 target/
+^src/target$
 
 # Git
 ^\.git$
@@ -18,6 +19,7 @@ target/
 ^src/vendor$
 ^src/vendor/.*
 ^\.cargo$
+^src/\.cargo$
 ^Cargo\.toml$
 ^Cargo\.lock$
 

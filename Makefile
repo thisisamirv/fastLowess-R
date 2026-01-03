@@ -47,7 +47,7 @@ fmt-check:
 
 clippy:
 	@echo "Rust clippy..."
-	@(cd src && cargo clippy --config cargo/config.toml --all-targets -- -D warnings)
+	@(cd src && cargo clippy --all-targets -- -D warnings)
 
 lint-r:
 	@echo "R linting..."
@@ -60,7 +60,7 @@ build: build-rust build-r
 
 build-rust:
 	@echo "Building Rust crate..."
-	@(cd src && cargo build --config cargo/config.toml --release)
+	@(cd src && cargo build --release)
 
 build-r: doc-r
 	@echo "Building R package tarball..."
@@ -86,7 +86,7 @@ doc: doc-rust doc-r vignettes
 
 doc-rust:
 	@echo "Generating Rust docs..."
-	@(cd src && RUSTDOCFLAGS="-D warnings" cargo doc --config cargo/config.toml --no-deps)
+	@(cd src && RUSTDOCFLAGS="-D warnings" cargo doc --no-deps)
 
 doc-r:
 	@echo "Generating R docs (roxygen2)..."
@@ -103,7 +103,7 @@ test: test-rust test-r test-cran-emulation
 
 test-rust:
 	@echo "Running Rust tests..."
-	@(cd src && cargo test --config cargo/config.toml)
+	@(cd src && cargo test)
 
 test-r:
 	@echo "Running R tests (devtools)..."
@@ -116,7 +116,7 @@ test-cran-emulation:
 # ==============================================================================
 # Submission Checks
 # ==============================================================================
-submission: check-cran bioccheck size
+submission: check-cran bioccheck size wasm-build
 
 check-cran: build-r
 	@echo "Running R CMD check --as-cran..."
@@ -130,10 +130,37 @@ size: build-r
 	@echo "Package size (Limit: 5MB):"
 	@ls -lh $(PKG_TARBALL)
 
+wasm-build:
+	@echo "Building WASM binary using R-universe Docker container..."
+	@if ! command -v docker &> /dev/null; then \
+		echo "Error: Docker is required. Install with: sudo pacman -S docker"; \
+		exit 1; \
+	fi
+	@if ! docker image inspect ghcr.io/r-universe-org/build-wasm:latest &> /dev/null; then \
+		echo "Pulling R-universe Docker image (this may take a while)..."; \
+		docker pull ghcr.io/r-universe-org/build-wasm:latest; \
+	fi
+	docker run --rm \
+		-v "$(PWD)":/pkg \
+		-w /pkg \
+		ghcr.io/r-universe-org/build-wasm:latest \
+		bash -c "R -e \"rwasm::build('./$(PKG_TARBALL)')\" && echo 'WASM build successful!'"
+
 # ==============================================================================
 # Other
 # ==============================================================================
-clean: clean-rust clean-r clean-other
+clean: clean-wasm clean-rust clean-r clean-other
+
+clean-wasm:
+	@if [ -d src/target ]; then \
+		if rm -rf src/target 2>/dev/null; then \
+			true; \
+		elif command -v docker >/dev/null; then \
+			docker run --rm -v "$(PWD)":/pkg ghcr.io/r-universe-org/build-wasm:latest rm -rf /pkg/src/target; \
+		else \
+			echo "Warning: Failed to clean src/target (permissions) and Docker not found."; \
+		fi \
+	fi
 
 clean-rust:
 	@(cd src && cargo clean 2>/dev/null || true)
@@ -145,7 +172,7 @@ clean-r:
 	@rm -rf $(PKG_NAME).Rcheck
 	@rm -rf $(PKG_NAME).BiocCheck
 	@rm -f $(PKG_NAME)_*.tar.gz
-	@rm -rf src/*.o src/*.so src/*.dll src/target
+	@rm -rf src/*.o src/*.so src/*.dll
 	@rm -rf doc Meta vignettes/*.html
 	@find . -name "*.Rout" -delete
 

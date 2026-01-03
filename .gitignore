@@ -35,6 +35,7 @@ tarpaulin-report.html
 *.o
 *.so
 *.tar.gz
+*.tgz
 *.Rcheck
 *.pdf
 /vendor/

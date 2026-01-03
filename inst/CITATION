@@ -3,6 +3,6 @@ bibentry(
   title   = "fastlowess: High-Performance LOWESS Smoothing for R",
   author  = person("Amir", "Valizadeh"),
   year    = "2025",
-  note    = "R package version 0.3.0",
+  note    = "R package version 0.99.1",
   url     = "https://github.com/thisisamirv/fastLowess-R"
 )

@@ -1,4 +1,4 @@
-# fastlowess Bioconductor Submission
+# rfastlowess Bioconductor Submission
 
 ## BiocCheck Results
 

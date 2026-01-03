@@ -106,6 +106,6 @@ smooth_streaming <- function(
         iterations, delta, weight_function, robustness_method, scaling_method,
         boundary_policy, auto_converge, return_diagnostics,
         return_robustness_weights, parallel,
-        PACKAGE = "fastlowess"
+        PACKAGE = "rfastlowess"
     )
 }

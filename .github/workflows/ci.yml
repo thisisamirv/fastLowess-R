@@ -78,7 +78,7 @@ jobs:
           needs: check
 
       - name: Formating and Linting
-        run: make fmt clippy lint-r
+        run: make extract-vendor fmt clippy lint-r
 
   check-cran-readiness:
     name: Check CRAN Readiness (Vendor & Size)

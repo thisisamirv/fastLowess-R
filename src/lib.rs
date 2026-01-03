@@ -567,7 +567,7 @@ fn lowess_result_to_list(result: LowessResult<f64>) -> Result<List> {
 // ============================================================================
 
 extendr_module! {
-    mod fastlowess;
+    mod rfastlowess;
     fn smooth;
     fn smooth_streaming;
     fn smooth_online;

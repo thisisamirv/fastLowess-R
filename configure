@@ -24,9 +24,9 @@ for arg in "$@"; do
     esac
 done
 
-# 3. Check environment for Emscripten clues (CC usually contains emcc)
+# 3. Check if CC explicitly contains emcc (safer than checking PATH)
 if [ "$IS_WASM" = "0" ]; then
-    if echo "$CC" | grep -q "emcc" || echo "$PATH" | grep -q "emscripten"; then
+    if echo "$CC" | grep -q "emcc"; then
         IS_WASM=1
     fi
 fi
@@ -39,17 +39,17 @@ if [ "$IS_WASM" = "1" ]; then
     # For WASM, do NOT use --whole-archive or legacy -u flags
     # We add -s EXPORT_ALL=0 to prevent internal Rust symbols from causing errors
     # and explicitly list our required entry points.
-    UNDEFINED_FLAGS="-s SIDE_MODULE=2 -L${TARGET_DIR}/release -lfastlowess -s EXPORT_ALL=0 -s EXPORTED_FUNCTIONS=['_R_init_fastlowess','_wrap__smooth','_wrap__smooth_streaming','_wrap__smooth_online']"
+    UNDEFINED_FLAGS="-s SIDE_MODULE=2 -L${TARGET_DIR}/release -lrfastlowess -s EXPORT_ALL=0 -s EXPORTED_FUNCTIONS=['_R_init_rfastlowess','_wrap__smooth','_wrap__smooth_streaming','_wrap__smooth_online']"
 elif [ "$UNAME" = "Darwin" ]; then
     echo "Configuring for macOS..."
     # On macOS, use -force_load with explicit path to include only needed symbols
     GC_SECTIONS=""
-    UNDEFINED_FLAGS="-Wl,-force_load,${TARGET_DIR}/release/libfastlowess.a"
+    UNDEFINED_FLAGS="-Wl,-force_load,${TARGET_DIR}/release/librfastlowess.a"
 else
     echo "Configuring for Linux/Unix..."
     # Default to Linux flags - use whole-archive to include all symbols
     GC_SECTIONS=""
-    UNDEFINED_FLAGS="-Wl,--whole-archive,${TARGET_DIR}/release/libfastlowess.a -Wl,--no-whole-archive"
+    UNDEFINED_FLAGS="-Wl,--whole-archive,${TARGET_DIR}/release/librfastlowess.a -Wl,--no-whole-archive"
 fi
 
 # Check if template exists

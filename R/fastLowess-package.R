@@ -1,4 +1,4 @@
-#' fastlowess: High-performance LOWESS (Locally Weighted Scatterplot Smoothing)
+#' rfastlowess: High-performance LOWESS (Locally Weighted Scatterplot Smoothing)
 #' for R
 #'
 #' @description
@@ -42,7 +42,7 @@
 #' }
 #'
 #' @section Design Notes:
-#' fastlowess is designed for performance and production use. It supports:
+#' rfastlowess is designed for performance and production use. It supports:
 #' \itemize{
 #'   \item **Parallel Execution**: Multi-core fits via Rust's Rayon (enabled by
 #'     default)
@@ -57,20 +57,20 @@
 #'
 #' @examples
 #' # Run available demos:
-#' demo(package = "fastlowess")
+#' demo(package = "rfastlowess")
 #'
 #' # 1. Batch Smoothing Demo
 #' # Demonstrates basic batch processing on a static dataset.
-#' demo("batch_smoothing", package = "fastlowess", ask = FALSE)
+#' demo("batch_smoothing", package = "rfastlowess", ask = FALSE)
 #'
 #' # 2. Online Smoothing Demo
 #' # Shows sliding window smoothing simulating real-time data updates.
-#' demo("online_smoothing", package = "fastlowess", ask = FALSE)
+#' demo("online_smoothing", package = "rfastlowess", ask = FALSE)
 #'
 #' # 3. Streaming Smoothing Demo
 #' # Illustrates chunked processing for datasets larger than memory.
-#' demo("streaming_smoothing", package = "fastlowess", ask = FALSE)
+#' demo("streaming_smoothing", package = "rfastlowess", ask = FALSE)
 #'
-#' @useDynLib fastlowess, .registration = TRUE
+#' @useDynLib rfastlowess, .registration = TRUE
 #' @importFrom stats smooth
 "_PACKAGE"

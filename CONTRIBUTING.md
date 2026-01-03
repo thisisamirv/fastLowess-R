@@ -1,4 +1,4 @@
-# Contributing to fastlowess (R)
+# Contributing to rfastlowess (R)
 
 We welcome contributions via bug reports, feature requests, documentation improvements, and code changes.
 
@@ -15,8 +15,8 @@ The project uses a `Makefile` to standardize development tasks and `extendr` to 
 
 ```bash
 # Clone and branch
-git clone https://github.com/thisisamirv/fastLowess-R.git
-cd fastLowess-R
+git clone https://github.com/thisisamirv/rfastlowess.git
+cd rfastlowess
 git checkout -b feature/your-feature
 
 # Run all checks (the main command you need)

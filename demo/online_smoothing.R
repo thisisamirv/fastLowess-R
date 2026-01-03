@@ -15,7 +15,7 @@
 # - Incremental updates without reprocessing entire dataset
 # =============================================================================
 
-library(fastlowess)
+library(rfastlowess)
 
 main <- function() {
     cat(strrep("=", 80), "\n")

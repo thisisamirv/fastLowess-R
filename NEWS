@@ -1,4 +1,4 @@
-fastlowess 0.99.1
+rfastlowess 0.99.1
 
 * New submission to Bioconductor.
 * Implemented high-performance LOWESS smoothing using Rust backend.

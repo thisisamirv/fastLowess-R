@@ -1,4 +1,4 @@
-Package: fastlowess
+Package: rfastlowess
 Title: Rust-Based LOWESS Smoothing
 Version: 0.99.1
 Authors@R: person("Amir", "Valizadeh", email = "thisisamirv@gmail.com", role = c("aut", "cre"), comment = c(ORCID = "0000-0001-5983-8527"))
@@ -14,5 +14,5 @@ RoxygenNote: 7.3.3
 biocViews: Preprocessing, StatisticalMethod, Regression, FunctionalPrediction, QualityControl
 Suggests: BiocStyle, knitr, rmarkdown, testthat (>= 3.0.0)
 VignetteBuilder: knitr
-BugReports: https://github.com/thisisamirv/fastLowess-R/issues
-URL: https://github.com/thisisamirv/fastLowess-R
+BugReports: https://github.com/thisisamirv/rfastlowess/issues
+URL: https://github.com/thisisamirv/rfastlowess

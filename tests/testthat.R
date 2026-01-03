@@ -7,6 +7,6 @@ if (!identical(Sys.getenv("NOT_CRAN"), "true")) {
 }
 
 library(testthat)
-library(fastlowess)
+library(rfastlowess)
 
-test_check("fastlowess")
+test_check("rfastlowess")

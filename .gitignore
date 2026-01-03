@@ -43,4 +43,5 @@ src/vendor/
 /doc/
 /Meta/
 src/Makevars
-fastlowess.BiocCheck
+rfastlowess.BiocCheck
+rfastlowess.Rcheck

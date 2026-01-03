@@ -139,6 +139,6 @@ smooth <- function(
         confidence_intervals, prediction_intervals, return_diagnostics,
         return_residuals, return_robustness_weights, zero_weight_fallback,
         auto_converge, cv_fractions, cv_method, cv_k, parallel,
-        PACKAGE = "fastlowess"
+        PACKAGE = "rfastlowess"
     )
 }

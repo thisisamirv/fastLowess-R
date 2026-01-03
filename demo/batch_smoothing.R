@@ -12,7 +12,7 @@
 # processing complete datasets that fit in memory.
 # =============================================================================
 
-library(fastlowess)
+library(rfastlowess)
 
 main <- function() {
     cat(strrep("=", 80), "\n")

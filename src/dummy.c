@@ -1,1 +1,1 @@
-void R_dummy_fastlowess_symbol() {}
+void R_dummy_rfastlowess_symbol() {}

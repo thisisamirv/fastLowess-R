@@ -35,11 +35,11 @@ target/
 # Development files
 .lintr
 ^Makefile$
-^fastlowess_.*\.tar\.gz$
+^rfastlowess_.*\.tar\.gz$
 ^\.Rbuildignore$
 ^cran-comments\.md$
 ^bioc-comments\.md$
 ^doc$
 ^Meta$
 ^_pkgdown\.yml$
-^fastlowess\.BiocCheck$
+^rfastlowess\.BiocCheck$

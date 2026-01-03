@@ -106,6 +106,6 @@ smooth_online <- function(
         iterations, delta, weight_function, robustness_method, scaling_method,
         boundary_policy, update_mode, auto_converge, return_robustness_weights,
         parallel,
-        PACKAGE = "fastlowess"
+        PACKAGE = "rfastlowess"
     )
 }

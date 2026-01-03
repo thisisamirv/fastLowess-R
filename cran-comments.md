@@ -1,4 +1,4 @@
-# fastlowess
+# rfastlowess
 
 ## Test environments
 

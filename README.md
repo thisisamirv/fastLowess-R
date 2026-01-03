@@ -1,8 +1,8 @@
-# fastlowess
+# rfastlowess
 
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
-[![R-CMD-check](https://github.com/thisisamirv/fastLowess-R/actions/workflows/ci.yml/badge.svg)](https://github.com/thisisamirv/fastLowess-R/actions/workflows/ci.yml)
-[![R-universe](https://thisisamirv.r-universe.dev/badges/fastlowess)](https://thisisamirv.r-universe.dev/fastlowess)
+[![R-CMD-check](https://github.com/thisisamirv/rfastlowess/actions/workflows/ci.yml/badge.svg)](https://github.com/thisisamirv/rfastlowess/actions/workflows/ci.yml)
+[![R-universe](https://thisisamirv.r-universe.dev/badges/rfastlowess)](https://thisisamirv.r-universe.dev/rfastlowess)
 
 **High-performance parallel LOWESS (Locally Weighted Scatterplot Smoothing) for R** — A high-level wrapper around the [`fastLowess`](https://github.com/thisisamirv/fastLowess) Rust crate that adds rayon-based parallelism and seamless R integration.
 
@@ -64,13 +64,13 @@ The factor 1.4826 = 1/Phi^-1(3/4) ensures consistency with the standard deviatio
 
 ## Performance Advantages
 
-The `fastlowess` R package demonstrates significant performance gains over R's `stats::lowess`. The benchmarks compare `fastlowess` (both Serial and Parallel execution modes) against the standard R implementation.
+The `rfastlowess` R package demonstrates significant performance gains over R's `stats::lowess`. The benchmarks compare `rfastlowess` (both Serial and Parallel execution modes) against the standard R implementation.
 
-The results show that `fastlowess` consistently outperforms `stats::lowess`, achieving speedups ranging from **1.1x to 6.8x**, with an **average speedup of approximately 2.3x**.
+The results show that `rfastlowess` consistently outperforms `stats::lowess`, achieving speedups ranging from **1.1x to 6.8x**, with an **average speedup of approximately 2.3x**.
 
 The table below shows speedups relative to the **R `stats::lowess` baseline**.
 
-| Name                  |      R      |  fastlowess   |
+| Name                  |      R      |  rfastlowess  |
 |-----------------------|-------------|---------------|
 | clustered             |   2.16ms    |   2.4-4.7x    |
 | constant_y            |   1.41ms    |   2.1-3.9x    |
@@ -109,25 +109,25 @@ The table below shows speedups relative to the **R `stats::lowess` baseline**.
 | scientific_500        |   0.15ms    |   1.3-0.6x    |
 | scientific_5000       |   1.22ms    |   1.6-1.7x    |
 
-\* **fastlowess**: Shows speedup range `[Serial-Parallel]`. E.g., `[2.0-2.5x]` means 2.0x speedup (Serial) and 2.5x speedup (Parallel).
+\* **rfastlowess**: Shows speedup range `[Serial-Parallel]`. E.g., `[2.0-2.5x]` means 2.0x speedup (Serial) and 2.5x speedup (Parallel).
 
 **Key Takeaways**:
 
-1. **Consistent Performance Gains**: `fastlowess` is consistently faster than `stats::lowess` across all benchmark categories, with speedups ranging from 1.1x to 6.8x.
+1. **Consistent Performance Gains**: `rfastlowess` is consistently faster than `stats::lowess` across all benchmark categories, with speedups ranging from 1.1x to 6.8x.
 2. **Parallel Scaling**:
     - **Large Datasets**: Parallel execution provides significant gains. For example, `delta_none` shows a jump from 1.5x (Serial) to 6.8x (Parallel) speedup, and `genomic_10000` shows 1.5x to 5.3x.
     - **Small Datasets**: For very small datasets (e.g., `scale_1000`, `financial_500`, `scientific_500`), Serial execution may be faster than Parallel due to thread overhead (e.g., `[1.5-1.0x]`, `[1.6-0.9x]`, `[1.3-0.6x]`).
 3. **Best Performance Scenarios**:
     - **Delta optimization**: When delta is enabled (non-zero), speedups are moderate (2-3.5x). When delta is disabled (`delta_none`), parallel execution shines with up to 6.8x speedup.
     - **Large-scale genomic data**: Shows excellent scaling with parallel execution (up to 5.5x for 50,000 points).
-    - **Pathological cases**: `fastlowess` maintains good performance even with challenging data like `extreme_outliers` (1.9-3.9x) and `high_noise` (1.1-3.2x).
-4. **Robustness Iterations**: Performance remains consistent across different iteration counts (1.7-2.9x speedup range), showing that `fastlowess` handles robustness efficiently.
+    - **Pathological cases**: `rfastlowess` maintains good performance even with challenging data like `extreme_outliers` (1.9-3.9x) and `high_noise` (1.1-3.2x).
+4. **Robustness Iterations**: Performance remains consistent across different iteration counts (1.7-2.9x speedup range), showing that `rfastlowess` handles robustness efficiently.
 
-Check [Benchmarks for fastLowess](https://github.com/thisisamirv/fastLowess-R/tree/bench/benchmarks) for detailed results and reproducible benchmarking code.
+Check [Benchmarks for rfastlowess](https://github.com/thisisamirv/rfastlowess/tree/bench/benchmarks) for detailed results and reproducible benchmarking code.
 
 ## Validation
 
-The `fastlowess` package is a **numerical twin** of R's `lowess` implementation:
+The `rfastlowess` package is a **numerical twin** of R's `lowess` implementation:
 
 | Aspect          | Status         | Details                                    |
 |-----------------|----------------|--------------------------------------------|
@@ -142,7 +142,7 @@ Check [Validation](https://github.com/thisisamirv/fastLowess-R/tree/bench/valida
 Install pre-built binaries from R-universe (no Rust required):
 
 ```r
-install.packages("fastlowess", repos = "https://thisisamirv.r-universe.dev")
+install.packages("rfastlowess", repos = "https://thisisamirv.r-universe.dev")
 ```
 
 ### From Source (Development)
@@ -159,7 +159,7 @@ devtools::install_github("thisisamirv/fastLowess-R")
 ## Quick Start
 
 ```r
-library(fastlowess)
+library(rfastlowess)
 
 x <- seq(1, 10, length.out = 100)
 y <- sin(x) + rnorm(100, sd = 0.2)
@@ -167,14 +167,14 @@ y <- sin(x) + rnorm(100, sd = 0.2)
 # Basic smoothing (parallel by default)
 result <- smooth(x, y, fraction = 0.3)
 
-plot(x, y, main = "fastlowess Smoothing")
+plot(x, y, main = "rfastlowess Smoothing")
 lines(result$x, result$y, col = "red", lwd = 2)
 ```
 
 ## Smoothing Parameters
 
 ```r
-library(fastlowess)
+library(rfastlowess)
 
 smooth(
     x, y,
@@ -301,7 +301,7 @@ result <- smooth_online(
 Check the included demos:
 
 ```r
-demo(package = "fastlowess")
+demo(package = "rfastlowess")
 demo("batch_smoothing")
 demo("online_smoothing")
 demo("streaming_smoothing")

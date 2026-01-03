@@ -1,11 +1,11 @@
-url: https://thisisamirv.r-universe.dev/fastlowess
+url: https://thisisamirv.r-universe.dev/rfastlowess
 
 template:
   bootstrap: 5
   bootswatch: flatly
 
 home:
-  title: fastlowess - High-Performance LOWESS Smoothing for R
+  title: rfastlowess - High-Performance LOWESS Smoothing for R
   description: >
     Rust-powered LOWESS smoothing with parallel execution, robustness iterations,
     and uncertainty quantification for genomic and time-series data.
@@ -24,8 +24,8 @@ navbar:
     articles:
       text: Articles
       menu:
-        - text: Introduction to fastlowess
-          href: articles/fastlowess-intro.html
+        - text: Introduction to rfastlowess
+          href: articles/rfastlowess-intro.html
     news:
       text: Changelog
       href: news/index.html

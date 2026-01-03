@@ -1,10 +1,10 @@
 ---
-title: "Introduction to fastlowess"
+title: "Introduction to rfastlowess"
 author: "Amir Valizadeh"
 date: "`r Sys.Date()`"
 output: BiocStyle::html_document
 vignette: >
-  %\VignetteIndexEntry{Introduction to fastlowess}
+  %\VignetteIndexEntry{Introduction to rfastlowess}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -18,9 +18,9 @@ knitr::opts_chunk$set(
 )
 ```
 
-# Introduction
+## Overview
 
-`fastlowess` is a high-performance R package for LOWESS (Locally Weighted
+`rfastlowess` is a high-performance R package for LOWESS (Locally Weighted
 Scatterplot Smoothing) built on a Rust backend. It provides significant speed
 improvements over standard R implementations while offering advanced features
 like robustness iterations, confidence intervals, and streaming processing.
@@ -40,11 +40,11 @@ Key advantages include:
 
 ```{r installation, eval=FALSE}
 # From R-universe (pre-built binaries, no Rust required)
-install.packages("fastlowess", repos = "https://thisisamirv.r-universe.dev")
+install.packages("rfastlowess", repos = "https://thisisamirv.r-universe.dev")
 
 # From source (requires Rust)
 
-devtools::install_github("thisisamirv/fastLowess-R")
+devtools::install_github("thisisamirv/rfastlowess")
 ```
 
 # Basic Usage
@@ -52,7 +52,7 @@ devtools::install_github("thisisamirv/fastLowess-R")
 ## Simple Smoothing
 
 ```{r basic_example}
-library(fastlowess)
+library(rfastlowess)
 
 # Generate example data
 set.seed(42)
@@ -222,7 +222,7 @@ lines(result_online$x, result_online$y, col = "green", lwd = 2)
 
 # Performance Comparison
 
-`fastlowess` provides significant speed improvements over standard
+`rfastlowess` provides significant speed improvements over standard
 implementations:
 
 - **1.5-6.8x faster** than R's `stats::lowess` (serial mode)
@@ -232,7 +232,7 @@ implementations:
 For detailed benchmarks, see the benchmark section in the
 [package repository][bench_url].
 
-[bench_url]: https://github.com/thisisamirv/fastLowess-R/tree/bench/benchmarks
+[bench_url]: https://github.com/thisisamirv/rfastlowess/tree/bench/benchmarks
 
 # Parameter Guidelines
 

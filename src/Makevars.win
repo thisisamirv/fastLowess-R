@@ -1,9 +1,9 @@
 TARGET_DIR = ../target
 LIBDIR = $(TARGET_DIR)/x86_64-pc-windows-gnu/release
-STATLIB = $(LIBDIR)/libfastlowess.a
+STATLIB = $(LIBDIR)/librfastlowess.a
 
 # Windows linking with Rust std lib dependencies
-PKG_LIBS = -L$(LIBDIR) -Wl,--whole-archive -lfastlowess -Wl,--no-whole-archive -lws2_32 -luserenv -ladvapi32 -lbcrypt -lncrypt -lntdll -Wl,--export-all-symbols
+PKG_LIBS = -L$(LIBDIR) -Wl,--whole-archive -lrfastlowess -Wl,--no-whole-archive -lws2_32 -luserenv -ladvapi32 -lbcrypt -lncrypt -lntdll -Wl,--export-all-symbols
 
 all: clean $(SHLIB)
 
